@@ -1,0 +1,6 @@
+# JH Secure - Python Dependencies
+# Standard library only - no external packages needed for runtime!
+# pyinstaller is only needed for building the EXE
+
+pyinstaller>=6.0.0
+pyinstaller-hooks-contrib>=2024.0
