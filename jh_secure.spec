@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# JH Secure v2.0 — PyInstaller Build Spec
+# JH Secure v2.0 - PyInstaller Build Spec
 
 block_cipher = None
 
@@ -9,17 +9,32 @@ a = Analysis(
     binaries=[],
     datas=[],
     hiddenimports=[
-        'tkinter', 'tkinter.ttk', 'tkinter.messagebox',
-        'tkinter.filedialog', 'hashlib', 'zipfile',
-        'base64', 'hmac', 'json', 'pathlib',
-        'datetime', 'threading', 'time', 'io',
+        'tkinter',
+        'tkinter.ttk',
+        'tkinter.messagebox',
+        'tkinter.filedialog',
+        'hashlib',
+        'zipfile',
+        'base64',
+        'hmac',
+        'json',
+        'pathlib',
+        'datetime',
+        'threading',
+        'time',
+        'io',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        'matplotlib', 'numpy', 'pandas', 'PIL',
-        'scipy', 'PyQt5', 'PyQt6',
+        'matplotlib',
+        'numpy',
+        'pandas',
+        'PIL',
+        'scipy',
+        'PyQt5',
+        'PyQt6',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
