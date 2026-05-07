@@ -1,0 +1,201 @@
+name: Build JH Secure
+
+on:
+  push:
+    branches: [main, master]
+    tags:     ['v*.*.*']
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v2.0.0)'
+        required: false
+        default: 'v2.0.0'
+
+jobs:
+  # ── Lint ──────────────────────────────────────────────────────────────────
+  lint:
+    name: 🔍 Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install pyflakes
+      - run: |
+          python -m pyflakes src/jh_secure.py
+          echo "✅ Lint passed"
+
+  # ── Windows Build ─────────────────────────────────────────────────────────
+  build-windows:
+    name: 🪟 Build Windows EXE
+    runs-on: windows-latest
+    needs: lint
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🐍 Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 Install PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller pyinstaller-hooks-contrib
+
+      - name: 🔨 Build EXE
+        run: pyinstaller jh_secure.spec --clean --noconfirm
+        shell: pwsh
+
+      - name: ✅ Verify Output
+        shell: pwsh
+        run: |
+          $exe = "dist/JH Secure.exe"
+          if (Test-Path $exe) {
+            $mb = [math]::Round((Get-Item $exe).Length / 1MB, 2)
+            Write-Host "✅ Build OK — $mb MB"
+          } else {
+            Write-Host "❌ EXE not found!"; exit 1
+          }
+
+      - name: 📦 Package Release
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Copy-Item "dist/JH Secure.exe" release/
+
+          $notes = @"
+JH Secure v2.0 — Portable Folder Lock
+========================================
+
+WHAT'S NEW IN v2.0
+-------------------
+👻 Fake Password  — Decoy PIN shows fake/empty files
+⏱  Auto-Lock Timer — Re-locks after set time (1 min → 1 hr)
+🛡  Brute Force Protection — Lockout after 5 wrong PINs (5 min)
+🔑 Change PIN — Change real PIN using old PIN
+📋 Access Log — Full unlock/lock/attempt history
+❌ Failed Attempt Log — Every wrong PIN recorded with timestamp
+📁 Multiple Folder Lock — Batch tab for managing many folders
+🗝  Batch Unlock — One master PIN unlocks all selected folders
+
+HOW TO USE
+-----------
+1. Run JH Secure.exe  (no install needed)
+2. Browse and select a folder
+3. Click LOCK → set 6-digit PIN + secret question
+4. Optional: set Fake Password, Master PIN, Auto-Lock timer
+5. The .jhsecure file travels WITH your folder
+6. On any PC: select folder → UNLOCK → enter PIN
+
+BRUTE FORCE PROTECTION
+-----------------------
+After 5 wrong PIN attempts, the folder is locked out for 5 minutes.
+All failed attempts are logged with timestamp.
+
+FAKE PASSWORD (Decoy PIN)
+--------------------------
+Set a separate "decoy" PIN. When entered:
+- The unlock popup accepts it normally
+- Shows fake/empty files instead of real ones
+- Real files remain safely encrypted
+
+AUTO-LOCK
+----------
+Set a timer (1 min to 1 hr). After unlock, the folder
+automatically re-locks when the timer expires.
+
+© JH Secure 2025 — Free & Open Source
+"@
+          $notes | Out-File -FilePath release/README.txt -Encoding UTF8
+
+      - name: 📤 Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: JH-Secure-v2-Windows-${{ github.sha }}
+          path: release/
+          retention-days: 30
+          if-no-files-found: error
+
+  # ── GitHub Release (tags only) ────────────────────────────────────────────
+  release:
+    name: 🚀 GitHub Release
+    needs: build-windows
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 📦 Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: JH-Secure-v2-Windows-${{ github.sha }}
+          path: release-assets/
+
+      - name: 🗜️ Zip Package
+        run: |
+          cd release-assets
+          zip -r "../JH-Secure-${{ github.ref_name }}-Windows.zip" .
+          ls -lh ../JH-Secure-*.zip
+
+      - name: 🏷️ Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "JH Secure ${{ github.ref_name }}"
+          body: |
+            ## 🔒 JH Secure ${{ github.ref_name }}
+            ### Portable Folder Lock for Windows — No Installation Required
+
+            ---
+
+            ### 📥 Download
+            **[JH-Secure-${{ github.ref_name }}-Windows.zip]()**  
+            Extract → double-click `JH Secure.exe` → done!
+
+            ---
+
+            ### ✨ What's New in v2.0
+
+            | Feature | Description |
+            |---------|-------------|
+            | 👻 **Fake Password** | Decoy PIN shows fake/empty files under pressure |
+            | ⏱️ **Auto-Lock Timer** | Re-locks after 1min / 5min / 15min / 30min / 1hr |
+            | 🛡️ **Brute Force Protection** | 5-minute lockout after 5 wrong PINs |
+            | 🔑 **Change PIN** | Change PIN safely with old PIN verification |
+            | 📋 **Access Log** | Full history: unlock, lock, failed attempts |
+            | ❌ **Failed Attempt Log** | Every wrong PIN logged with timestamp |
+            | 📁 **Batch Lock** | Lock multiple folders at once |
+            | 🗝️ **Batch Unlock** | One master PIN to unlock all selected folders |
+
+            ---
+
+            ### 🔐 Security
+            - PBKDF2-SHA256 key derivation (200,000 iterations)
+            - 32-byte random salt per folder
+            - Brute force lockout: 5 attempts → 5 minute cooldown
+            - All events logged to `.jhsecure_log`
+
+            ---
+
+            ### 📖 How It Works
+            1. Select any folder → **LOCK** → set PIN + secret question
+            2. Optionally set: Fake PIN, Master PIN, Auto-Lock timer
+            3. The `.jhsecure` file travels **with** the folder
+            4. Works on **any PC** — no installation needed
+            5. Wrong PIN 5× → locked out for 5 minutes
+
+            ---
+            Built with GitHub Actions ❤️
+          files: JH-Secure-${{ github.ref_name }}-Windows.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
