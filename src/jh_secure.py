@@ -1,16 +1,7 @@
 """
 JH Secure - Portable Folder Lock Application
 Version: 2.0.0
-
-New in v2.0:
-  - Fake Password (Decoy PIN) with dummy files
-  - Auto-Lock Timer
-  - Brute Force Protection (lockout after X failed attempts)
-  - Change PIN (old PIN required)
-  - Access Log (unlock history)
-  - Failed Attempt Log
-  - Multiple Folder Lock (batch select)
-  - Batch Unlock (master PIN)
+Theme: Clean White / User Friendly
 """
 
 import os
@@ -30,7 +21,7 @@ import time
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  CRYPTO UTILITIES
+#  CRYPTO
 # ══════════════════════════════════════════════════════════════════════════════
 
 def derive_key(pin: str, salt: bytes) -> bytes:
@@ -45,6 +36,42 @@ def hash_answer(answer: str) -> str:
 def xor_encrypt(data: bytes, key: bytes) -> bytes:
     full_key = (key * (len(data) // len(key) + 1))[:len(data)]
     return bytes(a ^ b for a, b in zip(data, full_key))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  COLORS — Clean White Theme
+# ══════════════════════════════════════════════════════════════════════════════
+
+C = {
+    "bg":         "#F5F7FA",
+    "white":      "#FFFFFF",
+    "surface":    "#FFFFFF",
+    "card":       "#FFFFFF",
+    "border":     "#E2E8F0",
+    "border2":    "#CBD5E1",
+    "blue":       "#3B82F6",
+    "blue_dark":  "#2563EB",
+    "blue_light": "#EFF6FF",
+    "green":      "#10B981",
+    "green_light":"#ECFDF5",
+    "red":        "#EF4444",
+    "red_light":  "#FEF2F2",
+    "orange":     "#F59E0B",
+    "orange_light":"#FFFBEB",
+    "purple":     "#8B5CF6",
+    "purple_light":"#F5F3FF",
+    "text":       "#1E293B",
+    "text2":      "#475569",
+    "text3":      "#94A3B8",
+    "shadow":     "#00000015",
+}
+
+FONT_TITLE  = ("Segoe UI", 22, "bold")
+FONT_HEAD   = ("Segoe UI", 13, "bold")
+FONT_SUB    = ("Segoe UI", 10)
+FONT_LABEL  = ("Segoe UI", 9)
+FONT_SMALL  = ("Segoe UI", 8)
+FONT_MONO   = ("Consolas", 10)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -76,212 +103,160 @@ AUTO_LOCK_OPTIONS = {
     "1 Hour":     3600,
 }
 
-COLORS = {
-    "bg":      "#0A0A0F",
-    "surface": "#111118",
-    "card":    "#16161F",
-    "border":  "#252535",
-    "accent":  "#00C8FF",
-    "accent2": "#0088BB",
-    "success": "#00FF9C",
-    "danger":  "#FF3366",
-    "warning": "#FFB800",
-    "purple":  "#A855F7",
-    "text":    "#EEEEF5",
-    "subtext": "#666680",
-    "input_bg":"#0E0E16",
-}
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  LOGGING
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _log_path(folder_path):
-    return os.path.join(folder_path, LOG_FILENAME)
+def _log_path(fp): return os.path.join(fp, LOG_FILENAME)
+def _lockout_path(fp): return os.path.join(fp, LOCKOUT_FILENAME)
 
-def _load_log(folder_path):
+def _load_log(fp):
     try:
-        with open(_log_path(folder_path), 'r') as f:
-            return json.load(f)
-    except Exception:
-        return []
+        with open(_log_path(fp)) as f: return json.load(f)
+    except: return []
 
-def _save_log(folder_path, entries):
+def _save_log(fp, entries):
     try:
-        with open(_log_path(folder_path), 'w') as f:
+        with open(_log_path(fp), 'w') as f:
             json.dump(entries[-200:], f, indent=2)
-    except Exception:
-        pass
+    except: pass
 
-def write_log(folder_path, event, detail=""):
-    entries = _load_log(folder_path)
-    entries.append({
-        "time":   datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "event":  event,
-        "detail": detail,
-    })
-    _save_log(folder_path, entries)
+def write_log(fp, event, detail=""):
+    e = _load_log(fp)
+    e.append({"time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+               "event": event, "detail": detail})
+    _save_log(fp, e)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  BRUTE FORCE PROTECTION
+#  BRUTE FORCE
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _lockout_path(folder_path):
-    return os.path.join(folder_path, LOCKOUT_FILENAME)
-
-def get_lockout_info(folder_path):
+def get_lockout_info(fp):
     try:
-        with open(_lockout_path(folder_path), 'r') as f:
-            return json.load(f)
-    except Exception:
-        return {"attempts": 0, "locked_until": 0}
+        with open(_lockout_path(fp)) as f: return json.load(f)
+    except: return {"attempts": 0, "locked_until": 0}
 
-def save_lockout_info(folder_path, info):
+def save_lockout_info(fp, info):
     try:
-        with open(_lockout_path(folder_path), 'w') as f:
-            json.dump(info, f)
-    except Exception:
-        pass
+        with open(_lockout_path(fp), 'w') as f: json.dump(info, f)
+    except: pass
 
-def is_locked_out(folder_path):
-    """Returns (bool, seconds_remaining)."""
-    info      = get_lockout_info(folder_path)
-    remaining = int(info.get("locked_until", 0) - time.time())
-    return (True, remaining) if remaining > 0 else (False, 0)
+def is_locked_out(fp):
+    info = get_lockout_info(fp)
+    rem  = int(info.get("locked_until", 0) - time.time())
+    return (True, rem) if rem > 0 else (False, 0)
 
-def record_failed_attempt(folder_path):
-    info = get_lockout_info(folder_path)
+def record_failed(fp):
+    info = get_lockout_info(fp)
     if time.time() > info.get("locked_until", 0):
         info["attempts"] = 0
     info["attempts"] = info.get("attempts", 0) + 1
     if info["attempts"] >= MAX_ATTEMPTS:
         info["locked_until"] = time.time() + LOCKOUT_SECONDS
-        write_log(folder_path, "LOCKOUT",
-                  f"Locked {LOCKOUT_SECONDS}s after {MAX_ATTEMPTS} fails")
-    save_lockout_info(folder_path, info)
-    write_log(folder_path, "FAILED_ATTEMPT", f"Attempt #{info['attempts']}")
+    save_lockout_info(fp, info)
+    write_log(fp, "FAILED_ATTEMPT", f"Attempt #{info['attempts']}")
     return info["attempts"]
 
-def reset_lockout(folder_path):
-    save_lockout_info(folder_path, {"attempts": 0, "locked_until": 0})
+def reset_lockout(fp):
+    save_lockout_info(fp, {"attempts": 0, "locked_until": 0})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  LOCK / UNLOCK CORE
+#  LOCK CORE
 # ══════════════════════════════════════════════════════════════════════════════
 
-def get_lock_file(folder_path):
-    return os.path.join(folder_path, LOCK_FILENAME)
+def get_lock_file(fp): return os.path.join(fp, LOCK_FILENAME)
 
-def is_locked(folder_path):
-    lf = get_lock_file(folder_path)
-    if not os.path.exists(lf):
-        return False
+def is_locked(fp):
+    lf = get_lock_file(fp)
+    if not os.path.exists(lf): return False
     try:
-        with open(lf, 'r') as f:
-            return json.load(f).get("locked", False)
-    except Exception:
-        return False
+        with open(lf) as f: return json.load(f).get("locked", False)
+    except: return False
 
-def _pack_folder(folder_path):
+def _pack(fp):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for root, dirs, files in os.walk(folder_path):
+        for root, dirs, files in os.walk(fp):
             dirs[:] = [d for d in dirs
                        if not d.startswith('.jhsecure') and d != "__decoy__"]
             for f in files:
-                if f.startswith('.jhsecure'):
-                    continue
+                if f.startswith('.jhsecure'): continue
                 full = os.path.join(root, f)
-                zf.write(full, os.path.relpath(full, folder_path))
+                zf.write(full, os.path.relpath(full, fp))
     return buf.getvalue()
 
-def _remove_originals(folder_path):
-    for root, dirs, files in os.walk(folder_path, topdown=False):
+def _remove_originals(fp):
+    for root, dirs, files in os.walk(fp, topdown=False):
         dirs[:] = [d for d in dirs if not d.startswith('.jhsecure')]
         for f in files:
-            if f.startswith('.jhsecure'):
-                continue
+            if f.startswith('.jhsecure'): continue
+            try: os.remove(os.path.join(root, f))
+            except: pass
+        if root != fp:
             try:
-                os.remove(os.path.join(root, f))
-            except Exception:
-                pass
-        if root != folder_path:
-            try:
-                if not os.listdir(root):
-                    os.rmdir(root)
-            except Exception:
-                pass
+                if not os.listdir(root): os.rmdir(root)
+            except: pass
 
-
-def create_lock(folder_path, pin, secret_q, secret_a,
+def create_lock(fp, pin, secret_q, secret_a,
                 decoy_pin="", auto_lock_seconds=0, master_pin=""):
     try:
-        salt     = os.urandom(32)
-        key      = derive_key(pin, salt)
-        raw_zip  = _pack_folder(folder_path)
-        encrypted = xor_encrypt(raw_zip, key)
+        salt      = os.urandom(32)
+        key       = derive_key(pin, salt)
+        raw       = _pack(fp)
+        encrypted = xor_encrypt(raw, key)
 
-        lock_data = {
-            "locked":             True,
-            "version":            "2.0",
-            "salt":               base64.b64encode(salt).decode(),
-            "pin_hash":           hash_pin(pin, salt),
-            "secret_question":    secret_q,
+        data = {
+            "locked": True, "version": "2.0",
+            "salt": base64.b64encode(salt).decode(),
+            "pin_hash": hash_pin(pin, salt),
+            "secret_question": secret_q,
             "secret_answer_hash": hash_answer(secret_a) if secret_a else "",
-            "encrypted_data":     base64.b64encode(encrypted).decode(),
-            "auto_lock_seconds":  auto_lock_seconds,
-            "unlocked_at":        0,
+            "encrypted_data": base64.b64encode(encrypted).decode(),
+            "auto_lock_seconds": auto_lock_seconds,
+            "unlocked_at": 0,
         }
 
-        # ── Decoy PIN ──────────────────────────────────────────────────
         if decoy_pin:
-            decoy_folder = os.path.join(folder_path, "__decoy__")
-            os.makedirs(decoy_folder, exist_ok=True)
-            sample = os.path.join(decoy_folder, "readme.txt")
+            dec_folder = os.path.join(fp, "__decoy__")
+            os.makedirs(dec_folder, exist_ok=True)
+            sample = os.path.join(dec_folder, "readme.txt")
             if not os.path.exists(sample):
-                with open(sample, 'w') as f:
-                    f.write("This folder is empty.\n")
+                with open(sample, 'w') as f2: f2.write("This folder is empty.\n")
             dbuf = io.BytesIO()
             with zipfile.ZipFile(dbuf, 'w') as zf:
-                for df in os.listdir(decoy_folder):
-                    dfp = os.path.join(decoy_folder, df)
-                    if os.path.isfile(dfp):
-                        zf.write(dfp, df)
+                for df in os.listdir(dec_folder):
+                    dfp = os.path.join(dec_folder, df)
+                    if os.path.isfile(dfp): zf.write(dfp, df)
             dsalt = os.urandom(32)
             dkey  = derive_key(decoy_pin, dsalt)
-            lock_data["decoy_salt"]     = base64.b64encode(dsalt).decode()
-            lock_data["decoy_pin_hash"] = hash_pin(decoy_pin, dsalt)
-            lock_data["decoy_data"]     = base64.b64encode(
+            data["decoy_salt"]     = base64.b64encode(dsalt).decode()
+            data["decoy_pin_hash"] = hash_pin(decoy_pin, dsalt)
+            data["decoy_data"]     = base64.b64encode(
                 xor_encrypt(dbuf.getvalue(), dkey)).decode()
 
-        # ── Master PIN ─────────────────────────────────────────────────
         if master_pin:
             msalt = os.urandom(32)
             mkey  = derive_key(master_pin, msalt)
-            lock_data["master_salt"]     = base64.b64encode(msalt).decode()
-            lock_data["master_pin_hash"] = hash_pin(master_pin, msalt)
-            lock_data["master_data"]     = base64.b64encode(
-                xor_encrypt(raw_zip, mkey)).decode()
+            data["master_salt"]     = base64.b64encode(msalt).decode()
+            data["master_pin_hash"] = hash_pin(master_pin, msalt)
+            data["master_data"]     = base64.b64encode(
+                xor_encrypt(raw, mkey)).decode()
 
-        with open(get_lock_file(folder_path), 'w') as f:
-            json.dump(lock_data, f, indent=2)
+        with open(get_lock_file(fp), 'w') as f2:
+            json.dump(data, f2, indent=2)
 
-        _remove_originals(folder_path)
-        write_log(folder_path, "LOCKED", "Folder locked")
+        _remove_originals(fp)
+        write_log(fp, "LOCKED", "Folder locked")
         return True
     except Exception as e:
-        print(f"Lock error: {e}")
-        return False
+        print(f"Lock error: {e}"); return False
 
-
-def verify_pin(folder_path, pin):
-    """Returns 'real' | 'decoy' | 'master' | 'wrong'."""
+def verify_pin(fp, pin):
     try:
-        with open(get_lock_file(folder_path), 'r') as f:
-            data = json.load(f)
+        with open(get_lock_file(fp)) as f: data = json.load(f)
         salt = base64.b64decode(data["salt"])
         if hmac.compare_digest(hash_pin(pin, salt), data["pin_hash"]):
             return 'real'
@@ -294,78 +269,58 @@ def verify_pin(folder_path, pin):
             if hmac.compare_digest(hash_pin(pin, msalt), data["master_pin_hash"]):
                 return 'master'
         return 'wrong'
-    except Exception:
-        return 'wrong'
+    except: return 'wrong'
 
-
-def unlock_folder(folder_path, pin):
+def unlock_folder(fp, pin):
     try:
-        with open(get_lock_file(folder_path), 'r') as f:
-            data = json.load(f)
-
-        pin_type = verify_pin(folder_path, pin)
-        if pin_type == 'wrong':
-            return False
-
-        if pin_type == 'real':
+        with open(get_lock_file(fp)) as f: data = json.load(f)
+        pt = verify_pin(fp, pin)
+        if pt == 'wrong': return False
+        if pt == 'real':
             key = derive_key(pin, base64.b64decode(data["salt"]))
             raw = xor_encrypt(base64.b64decode(data["encrypted_data"]), key)
-        elif pin_type == 'decoy':
+        elif pt == 'decoy':
             key = derive_key(pin, base64.b64decode(data["decoy_salt"]))
             raw = xor_encrypt(base64.b64decode(data["decoy_data"]), key)
         else:
             key = derive_key(pin, base64.b64decode(data["master_salt"]))
             raw = xor_encrypt(base64.b64decode(data["master_data"]), key)
-
         with zipfile.ZipFile(io.BytesIO(raw), 'r') as zf:
-            zf.extractall(folder_path)
-
-        os.remove(get_lock_file(folder_path))
-        reset_lockout(folder_path)
-        write_log(folder_path, "UNLOCKED", f"via {pin_type} PIN")
+            zf.extractall(fp)
+        os.remove(get_lock_file(fp))
+        reset_lockout(fp)
+        write_log(fp, "UNLOCKED", f"via {pt} PIN")
         return True
     except Exception as e:
-        print(f"Unlock error: {e}")
-        return False
+        print(f"Unlock error: {e}"); return False
 
-
-def change_pin(folder_path, old_pin, new_pin):
+def change_pin(fp, old_pin, new_pin):
     try:
-        with open(get_lock_file(folder_path), 'r') as f:
-            data = json.load(f)
+        with open(get_lock_file(fp)) as f: data = json.load(f)
         old_salt = base64.b64decode(data["salt"])
         if not hmac.compare_digest(hash_pin(old_pin, old_salt), data["pin_hash"]):
             return False
-        old_key  = derive_key(old_pin, old_salt)
-        raw      = xor_encrypt(base64.b64decode(data["encrypted_data"]), old_key)
+        raw      = xor_encrypt(base64.b64decode(data["encrypted_data"]),
+                               derive_key(old_pin, old_salt))
         new_salt = os.urandom(32)
         new_key  = derive_key(new_pin, new_salt)
         data["salt"]           = base64.b64encode(new_salt).decode()
         data["pin_hash"]       = hash_pin(new_pin, new_salt)
         data["encrypted_data"] = base64.b64encode(xor_encrypt(raw, new_key)).decode()
-        with open(get_lock_file(folder_path), 'w') as f:
-            json.dump(data, f, indent=2)
-        write_log(folder_path, "PIN_CHANGED", "Real PIN changed")
+        with open(get_lock_file(fp), 'w') as f: json.dump(data, f, indent=2)
+        write_log(fp, "PIN_CHANGED", "PIN changed")
         return True
-    except Exception as e:
-        print(f"Change PIN error: {e}")
-        return False
+    except: return False
 
-
-def verify_secret(folder_path, answer):
+def verify_secret(fp, answer):
     try:
-        with open(get_lock_file(folder_path), 'r') as f:
-            data = json.load(f)
+        with open(get_lock_file(fp)) as f: data = json.load(f)
         return hmac.compare_digest(hash_answer(answer), data["secret_answer_hash"])
-    except Exception:
-        return False
+    except: return False
 
-
-def reset_pin_via_secret(folder_path, new_pin):
-    """Reset PIN – call only after verify_secret passes."""
+def reset_pin_via_secret(fp, new_pin):
     try:
-        with open(get_lock_file(folder_path), 'r') as f:
-            data = json.load(f)
+        with open(get_lock_file(fp)) as f: data = json.load(f)
         old_salt = base64.b64decode(data["salt"])
         old_key  = derive_key(base64.b64encode(old_salt).decode(), old_salt)
         raw      = xor_encrypt(base64.b64decode(data["encrypted_data"]), old_key)
@@ -374,13 +329,10 @@ def reset_pin_via_secret(folder_path, new_pin):
         data["salt"]           = base64.b64encode(new_salt).decode()
         data["pin_hash"]       = hash_pin(new_pin, new_salt)
         data["encrypted_data"] = base64.b64encode(xor_encrypt(raw, new_key)).decode()
-        with open(get_lock_file(folder_path), 'w') as f:
-            json.dump(data, f, indent=2)
-        write_log(folder_path, "PIN_RESET", "via secret question")
+        with open(get_lock_file(fp), 'w') as f: json.dump(data, f, indent=2)
+        write_log(fp, "PIN_RESET", "via secret question")
         return True
-    except Exception as e:
-        print(f"Reset error: {e}")
-        return False
+    except: return False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -389,246 +341,303 @@ def reset_pin_via_secret(folder_path, new_pin):
 
 class AutoLockDaemon:
     def __init__(self, app):
-        self.app  = app
+        self.app = app
         self._stop = threading.Event()
         threading.Thread(target=self._run, daemon=True).start()
 
-    def stop(self):
-        self._stop.set()
+    def stop(self): self._stop.set()
 
     def _run(self):
         while not self._stop.is_set():
             time.sleep(15)
-            try:
-                self.app.after(0, self.app.check_auto_locks)
-            except Exception:
-                pass
+            try: self.app.after(0, self.app.check_auto_locks)
+            except: pass
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  CUSTOM WIDGETS
+#  WIDGETS
 # ══════════════════════════════════════════════════════════════════════════════
 
 class PINEntry(tk.Frame):
-    def __init__(self, master, length=6, **kwargs):
-        super().__init__(master, bg=COLORS["bg"], **kwargs)
+    def __init__(self, master, length=6, color=None, **kwargs):
+        super().__init__(master, bg=C["white"], **kwargs)
         self.length = length
+        self._color = color or C["blue"]
         self._var   = tk.StringVar()
         self._dots  = []
 
         self._entry = tk.Entry(self, textvariable=self._var, show="",
-                               width=0, bg=COLORS["bg"], fg=COLORS["bg"],
-                               insertbackground=COLORS["bg"],
+                               width=0, bg=C["white"], fg=C["white"],
+                               insertbackground=C["white"],
                                relief="flat", bd=0, highlightthickness=0)
         self._entry.pack()
         self._var.trace_add("write", self._on_change)
 
-        row = tk.Frame(self, bg=COLORS["bg"])
-        row.pack(pady=6)
+        row = tk.Frame(self, bg=C["white"])
+        row.pack(pady=4)
         for _ in range(length):
-            c = tk.Canvas(row, width=20, height=20,
-                          bg=COLORS["bg"], highlightthickness=0)
-            c.grid(row=0, column=_, padx=5)
-            c.create_oval(2, 2, 18, 18, fill=COLORS["border"],
-                          outline=COLORS["border"], tags="dot")
+            c = tk.Canvas(row, width=38, height=38,
+                          bg=C["white"], highlightthickness=0)
+            c.grid(row=0, column=_, padx=4)
+            self._draw_dot(c, False)
             self._dots.append(c)
 
         for w in (self, row, *self._dots):
             w.bind("<Button-1>", lambda e: self._entry.focus_set())
 
+    def _draw_dot(self, c, filled):
+        c.delete("all")
+        # Outer circle (border)
+        c.create_oval(2, 2, 36, 36,
+                      fill=self._color if filled else C["white"],
+                      outline=self._color if filled else C["border2"],
+                      width=2)
+        if filled:
+            c.create_oval(13, 13, 25, 25, fill=C["white"], outline="")
+
     def _on_change(self, *_):
         val   = self._var.get()
-        clean = ''.join(c for c in val if c.isdigit())[:self.length]
+        clean = ''.join(x for x in val if x.isdigit())[:self.length]
         if clean != val:
             self._var.set(clean)
             self._entry.icursor(len(clean))
             return
         for i, dot in enumerate(self._dots):
-            dot.delete("dot")
-            col = COLORS["accent"] if i < len(clean) else COLORS["border"]
-            dot.create_oval(2, 2, 18, 18, fill=col, outline=col, tags="dot")
+            self._draw_dot(dot, i < len(clean))
 
-    def get(self):
-        return self._var.get()
-
-    def clear(self):
-        self._var.set("")
-
-    def focus(self):
-        self._entry.focus_set()
+    def get(self): return self._var.get()
+    def clear(self): self._var.set("")
+    def focus(self): self._entry.focus_set()
 
 
-def make_btn(parent, text, cmd, color=None, w=180, h=42):
-    color = color or COLORS["accent"]
-    c = tk.Canvas(parent, width=w, height=h,
-                  bg=COLORS["card"], highlightthickness=0, cursor="hand2")
-    def draw(fill):
+def flat_btn(parent, text, cmd, bg=None, fg=None, w=160, h=40, radius=8):
+    bg = bg or C["blue"]
+    fg = fg or C["white"]
+    c  = tk.Canvas(parent, width=w, height=h,
+                   bg=parent.cget("bg"), highlightthickness=0, cursor="hand2")
+
+    def draw(fill, text_col):
         c.delete("all")
-        c.create_rectangle(0, 0, w, h, fill=fill, outline=color, width=1)
-        c.create_text(w//2, h//2, text=text,
-                      fill=COLORS["text"], font=("Consolas", 9, "bold"))
-    draw(COLORS["card"])
-    c.bind("<Enter>",    lambda e: draw(color))
-    c.bind("<Leave>",    lambda e: draw(COLORS["card"]))
+        # Rounded rectangle
+        r = radius
+        c.create_arc(0, 0, 2*r, 2*r, start=90, extent=90, fill=fill, outline=fill)
+        c.create_arc(w-2*r, 0, w, 2*r, start=0, extent=90, fill=fill, outline=fill)
+        c.create_arc(0, h-2*r, 2*r, h, start=180, extent=90, fill=fill, outline=fill)
+        c.create_arc(w-2*r, h-2*r, w, h, start=270, extent=90, fill=fill, outline=fill)
+        c.create_rectangle(r, 0, w-r, h, fill=fill, outline=fill)
+        c.create_rectangle(0, r, w, h-r, fill=fill, outline=fill)
+        c.create_text(w//2, h//2, text=text, fill=text_col,
+                      font=("Segoe UI", 9, "bold"))
+
+    def darken(color):
+        # Simple darken for hover
+        try:
+            r2 = int(color[1:3], 16)
+            g2 = int(color[3:5], 16)
+            b2 = int(color[5:7], 16)
+            r2 = max(0, r2 - 20)
+            g2 = max(0, g2 - 20)
+            b2 = max(0, b2 - 20)
+            return f"#{r2:02x}{g2:02x}{b2:02x}"
+        except:
+            return color
+
+    draw(bg, fg)
+    c.bind("<Enter>",    lambda e: draw(darken(bg), fg))
+    c.bind("<Leave>",    lambda e: draw(bg, fg))
     c.bind("<Button-1>", lambda e: cmd())
     return c
 
 
+def card(parent, pady=0, padx=0):
+    """White card with subtle shadow border."""
+    outer = tk.Frame(parent, bg=C["border"], bd=0)
+    inner = tk.Frame(outer, bg=C["white"], padx=padx or 20, pady=pady or 16)
+    inner.pack(fill="both", expand=True, padx=1, pady=1)
+    return outer, inner
+
+
+def section_label(parent, text, color=None):
+    tk.Label(parent, text=text, font=("Segoe UI", 8, "bold"),
+             fg=color or C["text2"], bg=C["white"]).pack(anchor="w", pady=(12, 4))
+
+
 def shake_window(win):
     x, y = win.winfo_x(), win.winfo_y()
-    for dx in [10, -10, 8, -8, 5, -5, 0]:
+    for dx in [8, -8, 6, -6, 4, -4, 0]:
         win.geometry(f"+{x+dx}+{y}")
-        win.update()
-        time.sleep(0.025)
+        win.update(); time.sleep(0.025)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  BASE WINDOW
+#  BASE DIALOG
 # ══════════════════════════════════════════════════════════════════════════════
 
-class BaseWin(tk.Toplevel):
-    def __init__(self, master, title, w=420, h=500):
+class BaseDialog(tk.Toplevel):
+    def __init__(self, master, title, w=440, h=520):
         super().__init__(master)
         self.title(title)
-        self.configure(bg=COLORS["bg"])
+        self.configure(bg=C["bg"])
         self.resizable(False, False)
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
         self.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
-        self._draw_header(title)
-        self.lift()
-        self.focus_force()
+        self._build_titlebar(title)
+        self.lift(); self.focus_force()
 
-    def _draw_header(self, subtitle):
-        hdr = tk.Frame(self, bg=COLORS["surface"], height=58)
-        hdr.pack(fill="x"); hdr.pack_propagate(False)
-        c = tk.Canvas(hdr, width=32, height=32,
-                      bg=COLORS["surface"], highlightthickness=0)
-        c.place(x=16, y=13)
-        c.create_oval(0, 0, 32, 32, fill=COLORS["accent"], outline="")
-        c.create_text(16, 16, text="🔒", font=("Segoe UI Emoji", 12))
-        tk.Label(hdr, text="JH SECURE", font=("Consolas", 12, "bold"),
-                 fg=COLORS["accent"], bg=COLORS["surface"]).place(x=58, y=12)
-        tk.Label(hdr, text=subtitle, font=("Consolas", 7),
-                 fg=COLORS["subtext"], bg=COLORS["surface"]).place(x=59, y=34)
-        tk.Frame(self, bg=COLORS["accent"], height=2).pack(fill="x")
+    def _build_titlebar(self, title):
+        bar = tk.Frame(self, bg=C["white"], height=56)
+        bar.pack(fill="x"); bar.pack_propagate(False)
+
+        # Blue left accent
+        tk.Frame(bar, bg=C["blue"], width=4).pack(side="left", fill="y")
+
+        # Icon + title
+        tk.Label(bar, text="🔒", font=("Segoe UI Emoji", 16),
+                 bg=C["white"], fg=C["blue"]).pack(side="left", padx=(14, 8))
+        tk.Label(bar, text=title, font=("Segoe UI", 12, "bold"),
+                 fg=C["text"], bg=C["white"]).pack(side="left")
+
+        # Separator
+        tk.Frame(self, bg=C["border"], height=1).pack(fill="x")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  LOCK SETUP  (v2)
+#  LOCK SETUP
 # ══════════════════════════════════════════════════════════════════════════════
 
-class LockSetupWindow(BaseWin):
-    def __init__(self, master, folder_path, on_success=None):
-        super().__init__(master, "Set Lock", w=460, h=680)
-        self.folder_path = folder_path
-        self.on_success  = on_success
+class LockSetupWindow(BaseDialog):
+    def __init__(self, master, fp, on_success=None):
+        super().__init__(master, "Lock Folder", w=480, h=700)
+        self.fp         = fp
+        self.on_success = on_success
         self._build()
 
     def _build(self):
-        outer = tk.Canvas(self, bg=COLORS["bg"], highlightthickness=0)
+        # Scrollable
+        outer = tk.Canvas(self, bg=C["bg"], highlightthickness=0)
         sb    = tk.Scrollbar(self, orient="vertical", command=outer.yview)
         outer.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
         outer.pack(fill="both", expand=True)
-
-        body   = tk.Frame(outer, bg=COLORS["bg"])
-        wid    = outer.create_window((0, 0), window=body, anchor="nw")
+        body = tk.Frame(outer, bg=C["bg"])
+        wid  = outer.create_window((0, 0), window=body, anchor="nw")
         body.bind("<Configure>",
                   lambda e: outer.configure(scrollregion=outer.bbox("all")))
         outer.bind("<Configure>",
                    lambda e: outer.itemconfig(wid, width=e.width))
 
-        P = dict(padx=28)
+        P = dict(padx=20)
 
-        def section(txt):
-            tk.Label(body, text=txt, font=("Consolas", 8, "bold"),
-                     fg=COLORS["accent"], bg=COLORS["bg"],
-                     **P).pack(anchor="w", pady=(8, 2))
+        # Folder name banner
+        banner = tk.Frame(body, bg=C["blue_light"])
+        banner.pack(fill="x", **P, pady=(16, 0))
+        tk.Label(banner, text=f"📁  {Path(self.fp).name}",
+                 font=("Segoe UI", 10, "bold"),
+                 fg=C["blue_dark"], bg=C["blue_light"],
+                 pady=10, padx=14).pack(anchor="w")
 
-        def pin_row(color=None):
-            fr = tk.Frame(body, bg=COLORS["bg"]); fr.pack(anchor="w", **P)
-            pe = PINEntry(fr, length=6); pe.pack()
-            return pe
+        # ── PIN card ──────────────────────────────────────────────────
+        c_out, c_in = card(body, pady=16, padx=20)
+        c_out.pack(fill="x", **P, pady=(12, 0))
 
-        def separator():
-            tk.Frame(body, bg=COLORS["border"], height=1,
-                     **P).pack(fill="x", pady=14)
+        tk.Label(c_in, text="Set Your PIN",
+                 font=("Segoe UI", 11, "bold"),
+                 fg=C["text"], bg=C["white"]).pack(anchor="w")
+        tk.Label(c_in, text="6-digit PIN to protect this folder",
+                 font=FONT_SMALL, fg=C["text3"], bg=C["white"]).pack(anchor="w")
 
-        tk.Frame(body, bg=COLORS["bg"], height=14).pack()
-        tk.Label(body, text="LOCK FOLDER", font=("Consolas", 15, "bold"),
-                 fg=COLORS["text"], bg=COLORS["bg"], **P).pack(anchor="w")
-        tk.Label(body, text=f"📁  {Path(self.folder_path).name}",
-                 font=("Consolas", 9), fg=COLORS["subtext"],
-                 bg=COLORS["bg"], **P).pack(anchor="w", pady=(2, 14))
-
-        # Real PIN
-        section("🔑  REAL PIN  (6 digits)")
-        self.pin1 = pin_row()
+        section_label(c_in, "ENTER PIN")
+        self.pin1 = PINEntry(c_in, length=6)
+        self.pin1.pack(anchor="w", pady=(0, 4))
         self.pin1.focus()
-        section("CONFIRM PIN")
-        self.pin2 = pin_row()
 
-        separator()
-        section("🔐  SECURITY RECOVERY")
+        section_label(c_in, "CONFIRM PIN")
+        self.pin2 = PINEntry(c_in, length=6)
+        self.pin2.pack(anchor="w")
+
+        # ── Secret Question card ──────────────────────────────────────
+        c_out2, c_in2 = card(body, pady=16, padx=20)
+        c_out2.pack(fill="x", **P, pady=(12, 0))
+
+        tk.Label(c_in2, text="Recovery Setup",
+                 font=("Segoe UI", 11, "bold"),
+                 fg=C["text"], bg=C["white"]).pack(anchor="w")
+        tk.Label(c_in2, text="In case you forget your PIN",
+                 font=FONT_SMALL, fg=C["text3"], bg=C["white"]).pack(anchor="w")
+
+        section_label(c_in2, "SECRET QUESTION")
         self.q_var = tk.StringVar(value=SECRET_QUESTIONS[0])
         style = ttk.Style(); style.theme_use("clam")
-        style.configure("D.TCombobox",
-                        fieldbackground=COLORS["input_bg"],
-                        background=COLORS["input_bg"],
-                        foreground=COLORS["text"],
-                        bordercolor=COLORS["border"],
-                        arrowcolor=COLORS["accent"])
-        cb = ttk.Combobox(body, textvariable=self.q_var,
+        style.configure("W.TCombobox",
+                        fieldbackground=C["bg"],
+                        background=C["white"],
+                        foreground=C["text"],
+                        bordercolor=C["border2"],
+                        arrowcolor=C["blue"])
+        cb = ttk.Combobox(c_in2, textvariable=self.q_var,
                           values=SECRET_QUESTIONS, state="readonly",
-                          style="D.TCombobox", width=48)
-        cb.pack(anchor="w", padx=28, pady=(4, 8))
+                          style="W.TCombobox", width=46)
+        cb.pack(anchor="w", pady=(0, 8))
 
-        fr_ans = tk.Frame(body, bg=COLORS["bg"])
-        fr_ans.pack(fill="x", padx=28)
-        tk.Label(fr_ans, text="SECRET ANSWER", font=("Consolas", 7),
-                 fg=COLORS["subtext"], bg=COLORS["bg"]).pack(anchor="w")
-        self.ans_e = tk.Entry(fr_ans, show="*", bg=COLORS["input_bg"],
-                              fg=COLORS["text"],
-                              insertbackground=COLORS["accent"],
-                              relief="flat", bd=8, font=("Consolas", 10))
-        self.ans_e.pack(fill="x", pady=(3, 4))
+        section_label(c_in2, "YOUR ANSWER")
+        self.ans_e = tk.Entry(c_in2, show="•", bg=C["bg"],
+                              fg=C["text"], insertbackground=C["blue"],
+                              relief="flat", bd=0, font=("Segoe UI", 11),
+                              highlightthickness=1,
+                              highlightbackground=C["border2"],
+                              highlightcolor=C["blue"])
+        self.ans_e.pack(fill="x", ipady=8, pady=(0, 4))
 
-        separator()
-        section("👻  FAKE PASSWORD  (optional)")
-        tk.Label(body,
-                 text="Give this PIN under pressure → shows empty/fake files.",
-                 font=("Consolas", 7), fg=COLORS["subtext"],
-                 bg=COLORS["bg"], **P).pack(anchor="w", pady=(0, 4))
-        self.decoy_pin = pin_row(color=COLORS["warning"])
+        # ── Advanced Options (collapsible feel) ───────────────────────
+        c_out3, c_in3 = card(body, pady=16, padx=20)
+        c_out3.pack(fill="x", **P, pady=(12, 0))
 
-        separator()
-        section("🗝️  MASTER PIN  (optional)")
-        tk.Label(body,
-                 text="One PIN to batch-unlock all your JH Secure folders.",
-                 font=("Consolas", 7), fg=COLORS["subtext"],
-                 bg=COLORS["bg"], **P).pack(anchor="w", pady=(0, 4))
-        self.master_pin = pin_row(color=COLORS["purple"])
+        tk.Label(c_in3, text="Advanced Options",
+                 font=("Segoe UI", 11, "bold"),
+                 fg=C["text"], bg=C["white"]).pack(anchor="w")
+        tk.Label(c_in3, text="Optional — leave blank to skip",
+                 font=FONT_SMALL, fg=C["text3"], bg=C["white"]).pack(anchor="w")
 
-        separator()
-        section("⏱️  AUTO-LOCK TIMER")
+        # Decoy PIN
+        section_label(c_in3, "👻  FAKE PASSWORD  (optional)")
+        tk.Label(c_in3,
+                 text="Enter this PIN under pressure → shows empty folder",
+                 font=FONT_SMALL, fg=C["text3"], bg=C["white"]).pack(anchor="w")
+        self.decoy_pin = PINEntry(c_in3, color=C["orange"])
+        self.decoy_pin.pack(anchor="w", pady=(4, 0))
+
+        # Master PIN
+        section_label(c_in3, "🗝️  MASTER PIN  (optional)")
+        tk.Label(c_in3,
+                 text="One PIN to unlock all your JH Secure folders",
+                 font=FONT_SMALL, fg=C["text3"], bg=C["white"]).pack(anchor="w")
+        self.master_pin = PINEntry(c_in3, color=C["purple"])
+        self.master_pin.pack(anchor="w", pady=(4, 0))
+
+        # Auto Lock
+        section_label(c_in3, "⏱️  AUTO-LOCK TIMER")
         self.auto_var = tk.StringVar(value="Never")
-        row = tk.Frame(body, bg=COLORS["bg"])
-        row.pack(anchor="w", padx=28, pady=(4, 14))
+        row = tk.Frame(c_in3, bg=C["white"]); row.pack(anchor="w", pady=(4, 0))
         for opt in AUTO_LOCK_OPTIONS:
-            tk.Radiobutton(row, text=opt, variable=self.auto_var, value=opt,
-                           font=("Consolas", 8), fg=COLORS["text"],
-                           bg=COLORS["bg"], selectcolor=COLORS["card"],
-                           activeforeground=COLORS["accent"],
-                           activebackground=COLORS["bg"],
-                           relief="flat").pack(side="left", padx=(0, 10))
+            rb = tk.Radiobutton(row, text=opt, variable=self.auto_var,
+                                value=opt, font=FONT_SMALL,
+                                fg=C["text2"], bg=C["white"],
+                                selectcolor=C["white"],
+                                activeforeground=C["blue"],
+                                activebackground=C["white"],
+                                relief="flat")
+            rb.pack(side="left", padx=(0, 10))
 
-        self.err_lbl = tk.Label(body, text="", font=("Consolas", 8),
-                                fg=COLORS["danger"], bg=COLORS["bg"])
-        self.err_lbl.pack(pady=(4, 6))
-        make_btn(body, "🔒  LOCK FOLDER", self._do_lock,
-                 color=COLORS["danger"], w=380, h=48).pack(pady=(0, 24))
+        # Error + button
+        self.err = tk.Label(body, text="", font=FONT_SMALL,
+                            fg=C["red"], bg=C["bg"])
+        self.err.pack(**P, pady=(8, 0))
 
-    def _do_lock(self):
+        btn = flat_btn(body, "🔒  Lock Folder", self._do,
+                       bg=C["blue"], w=440, h=48)
+        btn.pack(**P, pady=(6, 24))
+
+    def _do(self):
         p1     = self.pin1.get()
         p2     = self.pin2.get()
         ans    = self.ans_e.get().strip()
@@ -637,325 +646,348 @@ class LockSetupWindow(BaseWin):
         auto_s = AUTO_LOCK_OPTIONS[self.auto_var.get()]
 
         if len(p1) < 4:
-            self.err_lbl.config(text="PIN must be ≥ 4 digits"); return
+            self.err.config(text="⚠ PIN must be at least 4 digits"); return
         if p1 != p2:
             self.pin2.clear()
-            self.err_lbl.config(text="PINs do not match"); return
+            self.err.config(text="⚠ PINs do not match"); return
         if not ans:
-            self.err_lbl.config(text="Secret answer is required"); return
+            self.err.config(text="⚠ Secret answer is required"); return
         if decoy and decoy == p1:
-            self.err_lbl.config(text="Decoy PIN must differ from real PIN"); return
-        if master and master == p1:
-            self.err_lbl.config(text="Master PIN must differ from real PIN"); return
+            self.err.config(text="⚠ Fake PIN must be different from real PIN"); return
 
-        self.err_lbl.config(text="Locking…", fg=COLORS["warning"])
+        self.err.config(text="Locking folder…", fg=C["orange"])
         self.update()
 
-        ok = create_lock(self.folder_path, p1, self.q_var.get(), ans,
+        ok = create_lock(self.fp, p1, self.q_var.get(), ans,
                          decoy_pin=decoy, auto_lock_seconds=auto_s,
                          master_pin=master)
         if ok:
-            if self.on_success:
-                self.on_success()
+            if self.on_success: self.on_success()
             self.destroy()
         else:
-            self.err_lbl.config(text="Lock failed.", fg=COLORS["danger"])
+            self.err.config(text="⚠ Lock failed. Try again.", fg=C["red"])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  UNLOCK WINDOW
 # ══════════════════════════════════════════════════════════════════════════════
 
-class UnlockWindow(BaseWin):
-    def __init__(self, master, folder_path, on_success=None):
-        super().__init__(master, "Unlock", w=400, h=440)
-        self.folder_path = folder_path
-        self.on_success  = on_success
+class UnlockWindow(BaseDialog):
+    def __init__(self, master, fp, on_success=None):
+        super().__init__(master, "Unlock Folder", w=400, h=460)
+        self.fp         = fp
+        self.on_success = on_success
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         self._build()
 
     def _build(self):
         for w in self.winfo_children():
-            if isinstance(w, (tk.Frame, tk.Canvas)):
-                w.destroy()
+            if not isinstance(w, tk.Frame) or w.cget("bg") == C["white"]:
+                pass
 
-        body = tk.Frame(self, bg=COLORS["bg"])
-        body.pack(fill="both", expand=True, padx=30, pady=20)
+        body = tk.Frame(self, bg=C["bg"])
+        body.pack(fill="both", expand=True)
 
-        tk.Label(body, text="ENTER PIN",
-                 font=("Consolas", 18, "bold"),
-                 fg=COLORS["text"], bg=COLORS["bg"]).pack(pady=(10, 4))
-        tk.Label(body, text=f"📁  {Path(self.folder_path).name}",
-                 font=("Consolas", 9), fg=COLORS["subtext"],
-                 bg=COLORS["bg"]).pack(pady=(0, 20))
+        # Folder info
+        info = tk.Frame(body, bg=C["blue_light"])
+        info.pack(fill="x", padx=20, pady=(20, 0))
+        tk.Label(info, text=f"📁  {Path(self.fp).name}",
+                 font=("Segoe UI", 10, "bold"),
+                 fg=C["blue_dark"], bg=C["blue_light"],
+                 pady=10, padx=14).pack(anchor="w")
 
-        lo, remaining = is_locked_out(self.folder_path)
+        # Check lockout
+        lo, rem = is_locked_out(self.fp)
         if lo:
-            tk.Label(body,
-                     text=f"⛔  Too many failed attempts!\n"
-                          f"Try again in {remaining//60}m {remaining%60:02d}s",
-                     font=("Consolas", 10, "bold"),
-                     fg=COLORS["danger"], bg=COLORS["bg"],
-                     justify="center").pack(pady=20)
-            self._lockout_tick(body, remaining)
+            c_out, c_in = card(body, pady=20, padx=20)
+            c_out.pack(fill="x", padx=20, pady=12)
+            tk.Label(c_in, text="🔴  Too Many Attempts",
+                     font=("Segoe UI", 12, "bold"),
+                     fg=C["red"], bg=C["white"]).pack()
+            self.lock_lbl = tk.Label(c_in,
+                     text=f"Try again in {rem//60}m {rem%60:02d}s",
+                     font=("Segoe UI", 10), fg=C["text2"],
+                     bg=C["white"])
+            self.lock_lbl.pack(pady=8)
+            self._tick(rem)
             return
 
-        self.pin_e  = PINEntry(body, length=6)
+        # PIN card
+        c_out, c_in = card(body, pady=20, padx=20)
+        c_out.pack(fill="x", padx=20, pady=12)
+
+        tk.Label(c_in, text="Enter your PIN",
+                 font=("Segoe UI", 12, "bold"),
+                 fg=C["text"], bg=C["white"]).pack()
+        tk.Label(c_in, text="Enter the 6-digit PIN to unlock",
+                 font=FONT_SMALL, fg=C["text3"], bg=C["white"]).pack(pady=(2, 12))
+
+        self.pin_e = PINEntry(c_in, length=6)
         self.pin_e.pack(pady=(0, 8))
         self.pin_e.focus()
 
-        self.status = tk.Label(body, text="", font=("Consolas", 8),
-                               fg=COLORS["danger"], bg=COLORS["bg"])
-        self.status.pack(pady=(0, 14))
+        self.status = tk.Label(c_in, text="", font=FONT_SMALL,
+                               fg=C["red"], bg=C["white"])
+        self.status.pack(pady=(0, 4))
 
-        make_btn(body, "UNLOCK  →", self._do,
-                 color=COLORS["success"], w=200, h=44).pack(pady=(0, 16))
+        flat_btn(c_in, "Unlock →", self._do,
+                 bg=C["green"], w=360, h=44).pack(pady=(4, 0))
 
-        btn_row = tk.Frame(body, bg=COLORS["bg"])
-        btn_row.pack()
+        # Links
+        link_row = tk.Frame(body, bg=C["bg"])
+        link_row.pack(pady=(8, 0))
         for txt, cmd in [("Forgot PIN?", self._forgot),
                          ("Change PIN",  self._change)]:
-            lbl = tk.Label(btn_row, text=txt,
-                           font=("Consolas", 8, "underline"),
-                           fg=COLORS["subtext"], bg=COLORS["bg"],
-                           cursor="hand2")
+            lbl = tk.Label(link_row, text=txt, font=("Segoe UI", 9, "underline"),
+                           fg=C["blue"], bg=C["bg"], cursor="hand2")
             lbl.pack(side="left", padx=14)
             lbl.bind("<Button-1>", lambda e, c=cmd: c())
 
         self.bind("<Return>", lambda e: self._do())
 
-    def _lockout_tick(self, parent, remaining):
-        lbl = tk.Label(parent, text="", font=("Consolas", 9),
-                       fg=COLORS["warning"], bg=COLORS["bg"])
-        lbl.pack()
-        def tick(r):
-            if r <= 0:
-                self._build(); return
-            lbl.config(text=f"Retry in {r//60}m {r%60:02d}s")
-            self.after(1000, tick, r - 1)
-        tick(remaining)
+    def _tick(self, r):
+        if r <= 0:
+            self.destroy()
+            UnlockWindow(self.master, self.fp, self.on_success)
+            return
+        try:
+            self.lock_lbl.config(
+                text=f"Try again in {r//60}m {r%60:02d}s")
+            self.after(1000, self._tick, r - 1)
+        except: pass
 
     def _do(self):
-        lo, _ = is_locked_out(self.folder_path)
-        if lo:
-            return
+        lo, _ = is_locked_out(self.fp)
+        if lo: return
         pin = self.pin_e.get()
         if len(pin) < 4:
             shake_window(self); return
-
-        if verify_pin(self.folder_path, pin) != 'wrong':
-            if unlock_folder(self.folder_path, pin):
-                if self.on_success:
-                    self.on_success()
+        if verify_pin(self.fp, pin) != 'wrong':
+            if unlock_folder(self.fp, pin):
+                if self.on_success: self.on_success()
                 self.destroy()
             else:
-                self.status.config(text="Decryption error.")
+                self.status.config(text="⚠ Decryption failed.")
         else:
-            attempts = record_failed_attempt(self.folder_path)
+            attempts = record_failed(self.fp)
             self.pin_e.clear()
             left = MAX_ATTEMPTS - attempts
             if left <= 0:
-                self._build()
+                self.destroy()
+                UnlockWindow(self.master, self.fp, self.on_success)
             else:
-                self.status.config(text=f"Wrong PIN — {left} attempt(s) left")
+                self.status.config(
+                    text=f"⚠ Wrong PIN — {left} attempt(s) remaining")
                 shake_window(self)
 
     def _forgot(self):
-        RecoveryWindow(self, self.folder_path,
+        RecoveryWindow(self, self.fp,
                        on_success=lambda: (
                            self.on_success() if self.on_success else None,
                            self.destroy()))
 
     def _change(self):
-        ChangePINWindow(self, self.folder_path,
-                        on_success=lambda: self.status.config(
-                            text="PIN changed! Use new PIN.",
-                            fg=COLORS["success"]))
+        ChangePINWindow(self, self.fp)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  CHANGE PIN
 # ══════════════════════════════════════════════════════════════════════════════
 
-class ChangePINWindow(BaseWin):
-    def __init__(self, master, folder_path, on_success=None):
-        super().__init__(master, "Change PIN", w=400, h=420)
-        self.folder_path = folder_path
-        self.on_success  = on_success
+class ChangePINWindow(BaseDialog):
+    def __init__(self, master, fp, on_success=None):
+        super().__init__(master, "Change PIN", w=400, h=440)
+        self.fp         = fp
+        self.on_success = on_success
         self._build()
 
     def _build(self):
-        body = tk.Frame(self, bg=COLORS["bg"])
-        body.pack(fill="both", expand=True, padx=30, pady=20)
+        body = tk.Frame(self, bg=C["bg"])
+        body.pack(fill="both", expand=True)
 
-        tk.Label(body, text="CHANGE PIN",
-                 font=("Consolas", 16, "bold"),
-                 fg=COLORS["text"], bg=COLORS["bg"]).pack(pady=(8, 20))
+        c_out, c_in = card(body, pady=20, padx=20)
+        c_out.pack(fill="x", padx=20, pady=20)
 
-        for label, attr in [("CURRENT PIN", "old_pin"),
-                             ("NEW PIN",     "new_pin"),
-                             ("CONFIRM",     "confirm")]:
-            tk.Label(body, text=label, font=("Consolas", 7),
-                     fg=COLORS["subtext"], bg=COLORS["bg"]).pack(anchor="w")
-            pe = PINEntry(body); pe.pack(pady=(4, 12))
+        tk.Label(c_in, text="Change Your PIN",
+                 font=("Segoe UI", 12, "bold"),
+                 fg=C["text"], bg=C["white"]).pack(anchor="w")
+        tk.Label(c_in, text="Enter current PIN to set a new one",
+                 font=FONT_SMALL, fg=C["text3"], bg=C["white"]).pack(anchor="w")
+
+        for label, attr, col in [
+            ("CURRENT PIN", "old_pin", C["blue"]),
+            ("NEW PIN",     "new_pin", C["green"]),
+            ("CONFIRM NEW", "confirm", C["green"]),
+        ]:
+            section_label(c_in, label)
+            pe = PINEntry(c_in, color=col)
+            pe.pack(anchor="w", pady=(0, 4))
             setattr(self, attr, pe)
 
         self.old_pin.focus()
-        self.err = tk.Label(body, text="", font=("Consolas", 8),
-                            fg=COLORS["danger"], bg=COLORS["bg"])
-        self.err.pack(pady=(0, 10))
-        make_btn(body, "CHANGE PIN  ✓", self._do,
-                 color=COLORS["accent"], w=280, h=44).pack()
+        self.err = tk.Label(c_in, text="", font=FONT_SMALL,
+                            fg=C["red"], bg=C["white"])
+        self.err.pack(pady=(8, 0))
+        flat_btn(c_in, "Change PIN ✓", self._do,
+                 bg=C["blue"], w=360, h=44).pack(pady=(8, 0))
 
     def _do(self):
         old = self.old_pin.get()
         new = self.new_pin.get()
-        conf = self.confirm.get()
+        con = self.confirm.get()
         if len(new) < 4:
-            self.err.config(text="New PIN too short"); return
-        if new != conf:
+            self.err.config(text="⚠ New PIN too short"); return
+        if new != con:
             self.confirm.clear()
-            self.err.config(text="PINs do not match"); return
-        if change_pin(self.folder_path, old, new):
-            if self.on_success:
-                self.on_success()
+            self.err.config(text="⚠ PINs do not match"); return
+        if change_pin(self.fp, old, new):
+            if self.on_success: self.on_success()
+            messagebox.showinfo("Done", "PIN changed successfully!", parent=self)
             self.destroy()
         else:
             self.old_pin.clear()
-            self.err.config(text="Wrong current PIN")
+            self.err.config(text="⚠ Wrong current PIN")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  RECOVERY WINDOW
+#  RECOVERY
 # ══════════════════════════════════════════════════════════════════════════════
 
-class RecoveryWindow(BaseWin):
-    def __init__(self, master, folder_path, on_success=None):
-        super().__init__(master, "Recovery", w=400, h=440)
-        self.folder_path = folder_path
-        self.on_success  = on_success
+class RecoveryWindow(BaseDialog):
+    def __init__(self, master, fp, on_success=None):
+        super().__init__(master, "Forgot PIN", w=420, h=460)
+        self.fp         = fp
+        self.on_success = on_success
         try:
-            with open(get_lock_file(folder_path)) as f:
+            with open(get_lock_file(fp)) as f:
                 self.question = json.load(f).get("secret_question", "N/A")
-        except Exception:
-            self.question = "N/A"
-        self._verified_answer = ""
-        self.body = tk.Frame(self, bg=COLORS["bg"])
-        self.body.pack(fill="both", expand=True, padx=28, pady=20)
+        except: self.question = "N/A"
+        self.body = tk.Frame(self, bg=C["bg"])
+        self.body.pack(fill="both", expand=True)
         self._step1()
 
     def _clear(self):
-        for w in self.body.winfo_children():
-            w.destroy()
+        for w in self.body.winfo_children(): w.destroy()
 
     def _step1(self):
         self._clear()
-        tk.Label(self.body, text="FORGOT PIN",
-                 font=("Consolas", 16, "bold"),
-                 fg=COLORS["warning"], bg=COLORS["bg"]).pack(pady=(8, 18))
-        tk.Label(self.body, text="SECRET QUESTION:",
-                 font=("Consolas", 7), fg=COLORS["subtext"],
-                 bg=COLORS["bg"]).pack(anchor="w")
-        tk.Label(self.body, text=self.question,
-                 font=("Consolas", 10), fg=COLORS["text"],
-                 bg=COLORS["bg"], wraplength=340).pack(anchor="w", pady=(4, 18))
-        tk.Label(self.body, text="YOUR ANSWER:",
-                 font=("Consolas", 7), fg=COLORS["subtext"],
-                 bg=COLORS["bg"]).pack(anchor="w")
-        self.ans = tk.Entry(self.body, show="*", bg=COLORS["input_bg"],
-                            fg=COLORS["text"],
-                            insertbackground=COLORS["accent"],
-                            relief="flat", bd=8, font=("Consolas", 11))
-        self.ans.pack(fill="x", pady=(4, 20))
+        c_out, c_in = card(self.body, pady=20, padx=20)
+        c_out.pack(fill="x", padx=20, pady=20)
+
+        tk.Label(c_in, text="Account Recovery",
+                 font=("Segoe UI", 12, "bold"),
+                 fg=C["text"], bg=C["white"]).pack(anchor="w")
+        tk.Label(c_in, text="Answer your secret question to reset PIN",
+                 font=FONT_SMALL, fg=C["text3"], bg=C["white"]).pack(anchor="w")
+
+        section_label(c_in, "SECRET QUESTION")
+        tk.Label(c_in, text=self.question, font=("Segoe UI", 10),
+                 fg=C["blue_dark"], bg=C["white"],
+                 wraplength=360, justify="left").pack(anchor="w", pady=(0, 8))
+
+        section_label(c_in, "YOUR ANSWER")
+        self.ans = tk.Entry(c_in, show="•", bg=C["bg"],
+                            fg=C["text"], insertbackground=C["blue"],
+                            relief="flat", bd=0, font=("Segoe UI", 11),
+                            highlightthickness=1,
+                            highlightbackground=C["border2"],
+                            highlightcolor=C["blue"])
+        self.ans.pack(fill="x", ipady=8, pady=(0, 8))
         self.ans.focus()
-        self.err = tk.Label(self.body, text="", font=("Consolas", 8),
-                            fg=COLORS["danger"], bg=COLORS["bg"])
-        self.err.pack(pady=(0, 10))
-        make_btn(self.body, "VERIFY  →", self._verify,
-                 color=COLORS["warning"], w=260, h=44).pack()
+
+        self.err = tk.Label(c_in, text="", font=FONT_SMALL,
+                            fg=C["red"], bg=C["white"])
+        self.err.pack(pady=(0, 4))
+
+        flat_btn(c_in, "Verify Answer →", self._verify,
+                 bg=C["orange"], w=360, h=44).pack()
         self.bind("<Return>", lambda e: self._verify())
 
     def _verify(self):
-        answer = self.ans.get()
-        if verify_secret(self.folder_path, answer):
-            self._verified_answer = answer
+        if verify_secret(self.fp, self.ans.get()):
             self._step2()
         else:
             self.ans.delete(0, "end")
-            self.err.config(text="Wrong answer. Try again.")
+            self.err.config(text="⚠ Wrong answer. Try again.")
 
     def _step2(self):
         self._clear()
         self.unbind("<Return>")
-        tk.Label(self.body, text="SET NEW PIN",
-                 font=("Consolas", 16, "bold"),
-                 fg=COLORS["success"], bg=COLORS["bg"]).pack(pady=(8, 20))
-        for label, attr in [("NEW PIN:", "np"), ("CONFIRM:", "cp")]:
-            tk.Label(self.body, text=label, font=("Consolas", 7),
-                     fg=COLORS["subtext"], bg=COLORS["bg"]).pack(anchor="w")
-            pe = PINEntry(self.body); pe.pack(pady=(4, 12))
-            setattr(self, attr, pe)
+        c_out, c_in = card(self.body, pady=20, padx=20)
+        c_out.pack(fill="x", padx=20, pady=20)
+
+        tk.Label(c_in, text="Set New PIN",
+                 font=("Segoe UI", 12, "bold"),
+                 fg=C["text"], bg=C["white"]).pack(anchor="w")
+        tk.Label(c_in, text="Your identity is verified",
+                 font=FONT_SMALL, fg=C["green"], bg=C["white"]).pack(anchor="w")
+
+        section_label(c_in, "NEW PIN")
+        self.np = PINEntry(c_in, color=C["green"]); self.np.pack(anchor="w", pady=(0, 8))
         self.np.focus()
-        self.err2 = tk.Label(self.body, text="", font=("Consolas", 8),
-                             fg=COLORS["danger"], bg=COLORS["bg"])
-        self.err2.pack(pady=(0, 10))
-        make_btn(self.body, "RESET PIN  ✓", self._reset,
-                 color=COLORS["success"], w=260, h=44).pack()
+
+        section_label(c_in, "CONFIRM NEW PIN")
+        self.cp = PINEntry(c_in, color=C["green"]); self.cp.pack(anchor="w")
+
+        self.err2 = tk.Label(c_in, text="", font=FONT_SMALL,
+                             fg=C["red"], bg=C["white"])
+        self.err2.pack(pady=(8, 4))
+        flat_btn(c_in, "Reset PIN ✓", self._reset,
+                 bg=C["green"], w=360, h=44).pack()
 
     def _reset(self):
         p1, p2 = self.np.get(), self.cp.get()
         if len(p1) < 4:
-            self.err2.config(text="Too short"); return
+            self.err2.config(text="⚠ Too short"); return
         if p1 != p2:
             self.cp.clear()
-            self.err2.config(text="Mismatch"); return
-        if reset_pin_via_secret(self.folder_path, p1):
-            messagebox.showinfo("Done", "PIN reset! Unlock with new PIN.",
-                                parent=self)
-            if self.on_success:
-                self.on_success()
+            self.err2.config(text="⚠ PINs do not match"); return
+        if reset_pin_via_secret(self.fp, p1):
+            messagebox.showinfo("Done", "PIN reset! Use your new PIN.", parent=self)
+            if self.on_success: self.on_success()
             self.destroy()
         else:
-            self.err2.config(text="Reset failed")
+            self.err2.config(text="⚠ Reset failed")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  LOG VIEWER
 # ══════════════════════════════════════════════════════════════════════════════
 
-class LogViewerWindow(BaseWin):
-    def __init__(self, master, folder_path):
-        super().__init__(master, "Access Log", w=540, h=500)
-        self.folder_path = folder_path
+class LogViewerWindow(BaseDialog):
+    def __init__(self, master, fp):
+        super().__init__(master, "Access Log", w=560, h=520)
+        self.fp = fp
         self._build()
 
     def _build(self):
-        body = tk.Frame(self, bg=COLORS["bg"])
+        body = tk.Frame(self, bg=C["bg"])
         body.pack(fill="both", expand=True, padx=20, pady=16)
 
-        tk.Label(body, text="ACCESS LOG",
-                 font=("Consolas", 14, "bold"),
-                 fg=COLORS["text"], bg=COLORS["bg"]).pack(anchor="w", pady=(0, 4))
-        tk.Label(body, text=f"📁  {Path(self.folder_path).name}",
-                 font=("Consolas", 8), fg=COLORS["subtext"],
-                 bg=COLORS["bg"]).pack(anchor="w", pady=(0, 12))
+        tk.Label(body, text="Access Log",
+                 font=("Segoe UI", 13, "bold"),
+                 fg=C["text"], bg=C["bg"]).pack(anchor="w")
+        tk.Label(body, text=f"📁  {Path(self.fp).name}",
+                 font=FONT_SMALL, fg=C["text3"],
+                 bg=C["bg"]).pack(anchor="w", pady=(2, 12))
 
         cols = ("Time", "Event", "Detail")
         tv   = ttk.Treeview(body, columns=cols, show="headings", height=18)
 
         s = ttk.Style()
         s.configure("Log.Treeview",
-                    background=COLORS["card"], foreground=COLORS["text"],
-                    fieldbackground=COLORS["card"])
+                    background=C["white"], foreground=C["text"],
+                    fieldbackground=C["white"], rowheight=28,
+                    font=("Segoe UI", 9))
         s.configure("Log.Treeview.Heading",
-                    background=COLORS["surface"], foreground=COLORS["accent"],
-                    font=("Consolas", 8, "bold"))
+                    background=C["bg"], foreground=C["text2"],
+                    font=("Segoe UI", 8, "bold"))
         s.map("Log.Treeview",
-              background=[("selected", COLORS["accent2"])],
-              foreground=[("selected", COLORS["bg"])])
+              background=[("selected", C["blue_light"])],
+              foreground=[("selected", C["blue_dark"])])
         tv.configure(style="Log.Treeview")
 
-        for col, w in zip(cols, [160, 150, 190]):
+        for col, w in zip(cols, [165, 150, 210]):
             tv.heading(col, text=col.upper())
             tv.column(col, width=w, anchor="w")
 
@@ -964,7 +996,7 @@ class LogViewerWindow(BaseWin):
         sb.pack(side="right", fill="y")
         tv.pack(fill="both", expand=True)
 
-        entries = _load_log(self.folder_path)
+        entries = _load_log(self.fp)
         if not entries:
             tv.insert("", "end", values=("—", "No entries yet", ""))
         else:
@@ -972,80 +1004,90 @@ class LogViewerWindow(BaseWin):
                 tv.insert("", "end",
                           values=(e["time"], e["event"], e.get("detail", "")))
 
-        make_btn(body, "CLEAR LOG", self._clear,
-                 color=COLORS["danger"], w=140, h=36).pack(
+        flat_btn(body, "Clear Log", self._clear,
+                 bg=C["red"], fg=C["white"], w=120, h=34).pack(
                      anchor="e", pady=(10, 0))
 
     def _clear(self):
-        if messagebox.askyesno("Clear", "Delete all log entries?",
+        if messagebox.askyesno("Clear Log", "Delete all log entries?",
                                parent=self):
-            _save_log(self.folder_path, [])
+            _save_log(self.fp, [])
             self.destroy()
-            LogViewerWindow(self.master, self.folder_path)
+            LogViewerWindow(self.master, self.fp)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  BATCH UNLOCK WINDOW
+#  BATCH UNLOCK
 # ══════════════════════════════════════════════════════════════════════════════
 
-class BatchUnlockWindow(BaseWin):
+class BatchUnlockWindow(BaseDialog):
     def __init__(self, master, folders, on_done=None):
-        super().__init__(master, "Batch Unlock", w=480, h=520)
+        super().__init__(master, "Batch Unlock", w=460, h=500)
         self.folders = [f for f in folders if is_locked(f)]
         self.on_done = on_done
         self._build()
 
     def _build(self):
-        body = tk.Frame(self, bg=COLORS["bg"])
-        body.pack(fill="both", expand=True, padx=28, pady=20)
+        body = tk.Frame(self, bg=C["bg"])
+        body.pack(fill="both", expand=True, padx=20, pady=16)
 
-        tk.Label(body, text="BATCH UNLOCK",
-                 font=("Consolas", 15, "bold"),
-                 fg=COLORS["text"], bg=COLORS["bg"]).pack(pady=(4, 4))
-        tk.Label(body, text=f"{len(self.folders)} locked folder(s)",
-                 font=("Consolas", 8), fg=COLORS["subtext"],
-                 bg=COLORS["bg"]).pack(pady=(0, 14))
+        tk.Label(body, text="Batch Unlock",
+                 font=("Segoe UI", 13, "bold"),
+                 fg=C["text"], bg=C["bg"]).pack(anchor="w")
+        tk.Label(body, text=f"{len(self.folders)} locked folder(s) selected",
+                 font=FONT_SMALL, fg=C["text3"],
+                 bg=C["bg"]).pack(anchor="w", pady=(2, 12))
 
-        lf = tk.Frame(body, bg=COLORS["card"])
-        lf.pack(fill="x", pady=(0, 14))
+        # Folder list
+        lf = tk.Frame(body, bg=C["border"], bd=0)
+        lf.pack(fill="x", pady=(0, 12))
+        inner = tk.Frame(lf, bg=C["white"])
+        inner.pack(fill="both", padx=1, pady=1)
         for fp in self.folders:
-            tk.Label(lf, text=f"  🔒  {Path(fp).name}",
-                     font=("Consolas", 9), fg=COLORS["text"],
-                     bg=COLORS["card"], anchor="w",
-                     pady=3).pack(fill="x")
+            row = tk.Frame(inner, bg=C["white"])
+            row.pack(fill="x")
+            tk.Label(row, text="🔒", font=("Segoe UI Emoji", 10),
+                     bg=C["white"], fg=C["orange"]).pack(side="left", padx=(12, 4), pady=6)
+            tk.Label(row, text=Path(fp).name,
+                     font=("Segoe UI", 9), fg=C["text"],
+                     bg=C["white"]).pack(side="left", pady=6)
+            tk.Frame(inner, bg=C["border"], height=1).pack(fill="x")
 
-        tk.Frame(body, bg=COLORS["border"], height=1).pack(fill="x", pady=(0, 14))
-        tk.Label(body, text="ENTER MASTER PIN",
-                 font=("Consolas", 8, "bold"),
-                 fg=COLORS["purple"], bg=COLORS["bg"]).pack(anchor="w", pady=(0, 6))
-        self.mpin = PINEntry(body); self.mpin.pack(pady=(0, 8))
+        c_out, c_in = card(body, pady=16, padx=16)
+        c_out.pack(fill="x", pady=(0, 12))
+        tk.Label(c_in, text="Enter Master PIN",
+                 font=("Segoe UI", 10, "bold"),
+                 fg=C["text"], bg=C["white"]).pack(anchor="w")
+        tk.Label(c_in, text="The master PIN you set when locking",
+                 font=FONT_SMALL, fg=C["text3"], bg=C["white"]).pack(anchor="w")
+        self.mpin = PINEntry(c_in, color=C["purple"])
+        self.mpin.pack(anchor="w", pady=(8, 0))
         self.mpin.focus()
 
-        self.res = tk.Label(body, text="", font=("Consolas", 8),
-                            fg=COLORS["text"], bg=COLORS["bg"], justify="left")
-        self.res.pack(pady=(0, 12))
-        make_btn(body, "🗝️  UNLOCK ALL", self._do,
-                 color=COLORS["purple"], w=300, h=46).pack()
+        self.res = tk.Label(body, text="", font=FONT_SMALL,
+                            fg=C["text2"], bg=C["bg"], justify="left")
+        self.res.pack(anchor="w", pady=(0, 8))
+
+        flat_btn(body, "Unlock All Folders", self._do,
+                 bg=C["purple"], w=420, h=46).pack()
 
     def _do(self):
         pin = self.mpin.get()
-        if len(pin) < 4:
-            shake_window(self); return
-        ok, fail = 0, 0
-        lines = []
+        if len(pin) < 4: shake_window(self); return
+        ok = fail = 0; lines = []
         for fp in self.folders:
             pt = verify_pin(fp, pin)
             if pt in ('real', 'master'):
                 if unlock_folder(fp, pin):
                     ok += 1; lines.append(f"✅  {Path(fp).name}")
                 else:
-                    fail += 1; lines.append(f"❌  {Path(fp).name}  (error)")
+                    fail += 1; lines.append(f"❌  {Path(fp).name}")
             else:
                 fail += 1; lines.append(f"⛔  {Path(fp).name}  (wrong PIN)")
-        self.res.config(text="\n".join(lines[-8:]),
-                        fg=COLORS["success"] if fail == 0 else COLORS["warning"])
-        if ok > 0 and self.on_done:
-            self.on_done()
+        self.res.config(
+            text="\n".join(lines),
+            fg=C["green"] if fail == 0 else C["orange"])
+        if ok > 0 and self.on_done: self.on_done()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1055,17 +1097,18 @@ class BatchUnlockWindow(BaseWin):
 class JHSecureApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("JH Secure  v2.0")
-        self.configure(bg=COLORS["bg"])
+        self.title("JH Secure")
+        self.configure(bg=C["bg"])
         self.resizable(True, True)
-        self.minsize(560, 640)
+        self.minsize(580, 660)
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        self.geometry(f"620x720+{(sw-620)//2}+{(sh-720)//2}")
+        self.geometry(f"640x740+{(sw-640)//2}+{(sh-740)//2}")
 
         self.current_folder = None
         self.recent_folders = []
         self.batch_folders  = []
 
+        self._setup_styles()
         self._build_ui()
         self.recent_folders = self._load_recent()
         self._refresh_list()
@@ -1073,184 +1116,255 @@ class JHSecureApp(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _on_close(self):
-        self._daemon.stop()
-        self.destroy()
+        self._daemon.stop(); self.destroy()
 
-    # ── UI ───────────────────────────────────────────────────────────────────
+    def _setup_styles(self):
+        s = ttk.Style(); s.theme_use("clam")
+        s.configure("Tab.TNotebook", background=C["bg"], borderwidth=0)
+        s.configure("Tab.TNotebook.Tab",
+                    background=C["bg"], foreground=C["text2"],
+                    padding=[16, 8], font=("Segoe UI", 9, "bold"))
+        s.map("Tab.TNotebook.Tab",
+              background=[("selected", C["white"])],
+              foreground=[("selected", C["blue"])])
 
     def _build_ui(self):
-        # Header
-        hdr = tk.Frame(self, bg=COLORS["surface"], height=70)
+        # ── Top header ───────────────────────────────────────────────────────
+        hdr = tk.Frame(self, bg=C["white"], height=70)
         hdr.pack(fill="x"); hdr.pack_propagate(False)
-        logo = tk.Canvas(hdr, width=46, height=46,
-                         bg=COLORS["surface"], highlightthickness=0)
-        logo.place(x=18, y=12)
-        logo.create_oval(0, 0, 46, 46, fill=COLORS["accent"], outline="")
-        logo.create_text(23, 23, text="🔒", font=("Segoe UI Emoji", 18))
-        tk.Label(hdr, text="JH SECURE",
-                 font=("Consolas", 20, "bold"),
-                 fg=COLORS["accent"], bg=COLORS["surface"]).place(x=74, y=12)
-        tk.Label(hdr, text="Portable Folder Lock  v2.0",
-                 font=("Consolas", 8), fg=COLORS["subtext"],
-                 bg=COLORS["surface"]).place(x=76, y=44)
-        tk.Frame(self, bg=COLORS["accent"], height=2).pack(fill="x")
 
-        # Tab bar
-        tab_bar = tk.Frame(self, bg=COLORS["surface"])
-        tab_bar.pack(fill="x")
-        self._tab_btns = {}
-        for name, label in [("home","HOME"), ("batch","BATCH LOCK"),
-                             ("log","LOG")]:
-            b = tk.Label(tab_bar, text=label, font=("Consolas", 8, "bold"),
-                         fg=COLORS["subtext"], bg=COLORS["surface"],
-                         padx=20, pady=10, cursor="hand2")
-            b.pack(side="left")
-            b.bind("<Button-1>", lambda e, n=name: self._switch_tab(n))
-            self._tab_btns[name] = b
-        tk.Frame(self, bg=COLORS["border"], height=1).pack(fill="x")
+        # Blue sidebar accent
+        tk.Frame(hdr, bg=C["blue"], width=5).pack(side="left", fill="y")
 
-        # Pages
-        self.pages = {}
-        for name in ("home", "batch", "log"):
-            f = tk.Frame(self, bg=COLORS["bg"])
-            self.pages[name] = f
+        # App icon + name
+        icon_frame = tk.Frame(hdr, bg=C["blue"], width=70)
+        icon_frame.pack(side="left", fill="y")
+        icon_frame.pack_propagate(False)
+        tk.Label(icon_frame, text="🔒", font=("Segoe UI Emoji", 24),
+                 bg=C["blue"], fg=C["white"]).pack(expand=True)
 
-        self._build_home(self.pages["home"])
-        self._build_batch(self.pages["batch"])
-        self._build_log_page(self.pages["log"])
-        self._switch_tab("home")
+        title_frame = tk.Frame(hdr, bg=C["white"])
+        title_frame.pack(side="left", fill="both", expand=True, padx=16)
+        tk.Label(title_frame, text="JH Secure",
+                 font=("Segoe UI", 18, "bold"),
+                 fg=C["text"], bg=C["white"]).pack(anchor="w", pady=(12, 0))
+        tk.Label(title_frame, text="Portable Folder Lock  •  v2.0",
+                 font=("Segoe UI", 9), fg=C["text3"],
+                 bg=C["white"]).pack(anchor="w")
 
-    def _switch_tab(self, name):
-        for n, f in self.pages.items():
-            f.pack_forget()
-        for n, b in self._tab_btns.items():
-            b.config(fg=COLORS["accent"] if n == name else COLORS["subtext"])
-        self.pages[name].pack(fill="both", expand=True)
-        if name == "log":
-            self._refresh_log_page()
+        tk.Frame(self, bg=C["border"], height=1).pack(fill="x")
 
-    # ── HOME TAB ─────────────────────────────────────────────────────────────
+        # ── Notebook tabs ────────────────────────────────────────────────────
+        nb = ttk.Notebook(self, style="Tab.TNotebook")
+        nb.pack(fill="both", expand=True, padx=0, pady=0)
+
+        home_page  = tk.Frame(nb, bg=C["bg"])
+        batch_page = tk.Frame(nb, bg=C["bg"])
+        log_page   = tk.Frame(nb, bg=C["bg"])
+
+        nb.add(home_page,  text="  🏠  Home  ")
+        nb.add(batch_page, text="  📁  Batch  ")
+        nb.add(log_page,   text="  📋  Log  ")
+
+        nb.bind("<<NotebookTabChanged>>",
+                lambda e: self._on_tab_change(nb.index(nb.select())))
+
+        self._build_home(home_page)
+        self._build_batch(batch_page)
+        self._build_log(log_page)
+
+    def _on_tab_change(self, idx):
+        if idx == 2:
+            self._refresh_log_tab()
+
+    # ── HOME ─────────────────────────────────────────────────────────────────
 
     def _build_home(self, page):
-        body = tk.Frame(page, bg=COLORS["bg"])
-        body.pack(fill="both", expand=True, padx=24, pady=18)
+        scroll_c = tk.Canvas(page, bg=C["bg"], highlightthickness=0)
+        sb = tk.Scrollbar(page, orient="vertical", command=scroll_c.yview)
+        scroll_c.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        scroll_c.pack(fill="both", expand=True)
+        body = tk.Frame(scroll_c, bg=C["bg"])
+        wid  = scroll_c.create_window((0,0), window=body, anchor="nw")
+        body.bind("<Configure>",
+                  lambda e: scroll_c.configure(scrollregion=scroll_c.bbox("all")))
+        scroll_c.bind("<Configure>",
+                      lambda e: scroll_c.itemconfig(wid, width=e.width))
 
-        # Folder picker row
-        tk.Label(body, text="SELECTED FOLDER", font=("Consolas", 7),
-                 fg=COLORS["subtext"], bg=COLORS["bg"]).pack(anchor="w")
-        ff = tk.Frame(body, bg=COLORS["card"])
-        ff.pack(fill="x", pady=(5, 0))
-        self.folder_label = tk.Label(ff, text="No folder selected",
-                                     font=("Consolas", 9),
-                                     fg=COLORS["subtext"], bg=COLORS["card"],
-                                     anchor="w", padx=12, pady=10,
-                                     wraplength=420)
-        self.folder_label.pack(side="left", fill="x", expand=True)
-        browse = tk.Label(ff, text=" Browse ", font=("Consolas", 8, "bold"),
-                          fg=COLORS["bg"], bg=COLORS["accent"],
-                          cursor="hand2", padx=10, pady=10)
-        browse.pack(side="right")
-        browse.bind("<Button-1>", lambda e: self._browse())
+        P = dict(padx=20)
 
-        # Status card
-        sf = tk.Frame(body, bg=COLORS["card"])
-        sf.pack(fill="x", pady=(12, 0))
-        self.status_c = tk.Canvas(sf, bg=COLORS["card"],
-                                  highlightthickness=0, height=56)
-        self.status_c.pack(fill="x", padx=16, pady=10)
+        # ── Folder picker ────────────────────────────────────────────────────
+        c_out, c_in = card(body, pady=14, padx=16)
+        c_out.pack(fill="x", **P, pady=(20, 0))
+
+        top = tk.Frame(c_in, bg=C["white"])
+        top.pack(fill="x")
+        tk.Label(top, text="Select Folder",
+                 font=("Segoe UI", 11, "bold"),
+                 fg=C["text"], bg=C["white"]).pack(side="left")
+        flat_btn(top, "Browse…", self._browse,
+                 bg=C["blue"], w=100, h=32).pack(side="right")
+
+        self.folder_label = tk.Label(c_in,
+                                     text="No folder selected — click Browse to start",
+                                     font=("Segoe UI", 9), fg=C["text3"],
+                                     bg=C["white"], anchor="w",
+                                     wraplength=500)
+        self.folder_label.pack(anchor="w", pady=(8, 0))
+
+        # ── Status card ──────────────────────────────────────────────────────
+        self.status_card_out, self.status_card = card(body, pady=16, padx=16)
+        self.status_card_out.pack(fill="x", **P, pady=(12, 0))
         self._draw_status(None)
 
-        # Action buttons — 4 across
-        row = tk.Frame(body, bg=COLORS["bg"])
-        row.pack(fill="x", pady=(16, 0))
+        # ── Action buttons ───────────────────────────────────────────────────
+        btn_row = tk.Frame(body, bg=C["bg"])
+        btn_row.pack(fill="x", **P, pady=(14, 0))
+
         btns = [
-            ("🔒  LOCK",    self._lock_action,    COLORS["danger"],  130),
-            ("🔓  UNLOCK",  self._unlock_action,  COLORS["success"], 130),
-            ("🔑  CHANGE",  self._change_pin,     COLORS["purple"],  120),
-            ("📋  LOG",     self._view_log,       COLORS["accent"],  100),
+            ("🔒  Lock",    self._lock_action,   C["blue"],   138),
+            ("🔓  Unlock",  self._unlock_action, C["green"],  138),
+            ("🔑  Change",  self._change_pin,    C["purple"], 120),
+            ("📋  Log",     self._view_log,      C["text2"],  100),
         ]
-        for i, (txt, cmd, col, w) in enumerate(btns):
-            make_btn(row, txt, cmd, color=col, w=w, h=48).grid(
-                row=0, column=i, padx=(0, 6))
+        for txt, cmd, col, w in btns:
+            flat_btn(btn_row, txt, cmd, bg=col, w=w, h=44).pack(
+                side="left", padx=(0, 8))
 
-        # Recent list
-        tk.Label(body, text="RECENT FOLDERS", font=("Consolas", 7),
-                 fg=COLORS["subtext"], bg=COLORS["bg"]).pack(anchor="w",
-                                                             pady=(20, 5))
-        lf = tk.Frame(body, bg=COLORS["card"])
-        lf.pack(fill="both", expand=True)
-        sb = tk.Scrollbar(lf, orient="vertical", bg=COLORS["border"])
-        self.folder_list = tk.Listbox(lf, bg=COLORS["card"],
-                                      fg=COLORS["text"],
-                                      selectbackground=COLORS["accent"],
-                                      selectforeground=COLORS["bg"],
-                                      font=("Consolas", 9), relief="flat",
-                                      bd=0, yscrollcommand=sb.set,
+        # ── Recent folders ───────────────────────────────────────────────────
+        tk.Label(body, text="Recent Folders",
+                 font=("Segoe UI", 10, "bold"),
+                 fg=C["text2"], bg=C["bg"]).pack(anchor="w",
+                                                 padx=20, pady=(20, 6))
+
+        list_out = tk.Frame(body, bg=C["border"])
+        list_out.pack(fill="x", **P, pady=(0, 24))
+        list_in  = tk.Frame(list_out, bg=C["white"])
+        list_in.pack(fill="both", padx=1, pady=1)
+
+        sb2 = tk.Scrollbar(list_in, orient="vertical", bg=C["border"])
+        self.folder_list = tk.Listbox(list_in,
+                                      bg=C["white"], fg=C["text"],
+                                      selectbackground=C["blue_light"],
+                                      selectforeground=C["blue_dark"],
+                                      font=("Segoe UI", 9),
+                                      relief="flat", bd=0,
+                                      yscrollcommand=sb2.set,
                                       activestyle="none",
-                                      highlightthickness=0)
-        sb.config(command=self.folder_list.yview)
-        sb.pack(side="right", fill="y")
-        self.folder_list.pack(fill="both", expand=True, padx=2)
-        self.folder_list.bind("<<ListboxSelect>>", self._on_list_sel)
-        self.folder_list.bind("<Double-Button-1>", self._on_list_dbl)
+                                      highlightthickness=0,
+                                      height=10)
+        sb2.config(command=self.folder_list.yview)
+        sb2.pack(side="right", fill="y")
+        self.folder_list.pack(fill="both", expand=True)
+        self.folder_list.bind("<<ListboxSelect>>", self._on_sel)
+        self.folder_list.bind("<Double-Button-1>",  self._on_dbl)
 
-        footer = tk.Frame(page, bg=COLORS["surface"], height=30)
-        footer.pack(fill="x", side="bottom")
-        footer.pack_propagate(False)
-        tk.Label(footer, text="JH Secure v2.0  •  Portable  •  Encrypted  •  Brute-Force Protected",
-                 font=("Consolas", 7), fg=COLORS["subtext"],
-                 bg=COLORS["surface"]).pack(expand=True)
+    def _draw_status(self, path):
+        for w in self.status_card.winfo_children():
+            w.destroy()
 
-    # ── BATCH TAB ────────────────────────────────────────────────────────────
+        if not path:
+            tk.Label(self.status_card,
+                     text="⬤  No folder selected",
+                     font=("Segoe UI", 10), fg=C["text3"],
+                     bg=C["white"]).pack(anchor="w")
+            return
+
+        locked = is_locked(path)
+        if locked:
+            bg_color   = C["red_light"]
+            dot_color  = C["red"]
+            state_text = "Locked"
+            icon       = "🔒"
+        else:
+            bg_color   = C["green_light"]
+            dot_color  = C["green"]
+            state_text = "Unlocked"
+            icon       = "🔓"
+
+        # Colored status banner
+        banner = tk.Frame(self.status_card, bg=bg_color)
+        banner.pack(fill="x")
+        tk.Label(banner, text=f"  {icon}  {state_text}  —  {Path(path).name}",
+                 font=("Segoe UI", 10, "bold"),
+                 fg=dot_color, bg=bg_color,
+                 pady=10, anchor="w").pack(fill="x")
+
+        # Auto-lock info
+        lf = get_lock_file(path)
+        if not locked and os.path.exists(lf):
+            try:
+                with open(lf) as f: d = json.load(f)
+                als = d.get("auto_lock_seconds", 0)
+                uat = d.get("unlocked_at", 0)
+                if als and uat:
+                    rem = int((uat + als) - time.time())
+                    if rem > 0:
+                        tk.Label(self.status_card,
+                                 text=f"  ⏱  Auto-lock in {rem//60}m {rem%60:02d}s",
+                                 font=("Segoe UI", 8), fg=C["orange"],
+                                 bg=C["white"]).pack(anchor="w", pady=(6, 0))
+            except: pass
+
+        # Lockout warning
+        lo, rem2 = is_locked_out(path)
+        if lo:
+            tk.Label(self.status_card,
+                     text=f"  ⛔  Locked out — retry in {rem2//60}m {rem2%60:02d}s",
+                     font=("Segoe UI", 8), fg=C["red"],
+                     bg=C["white"]).pack(anchor="w", pady=(4, 0))
+
+    # ── BATCH ─────────────────────────────────────────────────────────────────
 
     def _build_batch(self, page):
-        body = tk.Frame(page, bg=COLORS["bg"])
-        body.pack(fill="both", expand=True, padx=24, pady=20)
+        body = tk.Frame(page, bg=C["bg"])
+        body.pack(fill="both", expand=True, padx=20, pady=20)
 
-        tk.Label(body, text="BATCH OPERATIONS",
-                 font=("Consolas", 14, "bold"),
-                 fg=COLORS["text"], bg=COLORS["bg"]).pack(anchor="w", pady=(0, 4))
-        tk.Label(body, text="Select multiple folders to lock or batch-unlock with master PIN.",
-                 font=("Consolas", 8), fg=COLORS["subtext"],
-                 bg=COLORS["bg"]).pack(anchor="w", pady=(0, 14))
+        tk.Label(body, text="Batch Operations",
+                 font=("Segoe UI", 13, "bold"),
+                 fg=C["text"], bg=C["bg"]).pack(anchor="w")
+        tk.Label(body, text="Manage multiple folders at once",
+                 font=FONT_SMALL, fg=C["text3"],
+                 bg=C["bg"]).pack(anchor="w", pady=(2, 14))
 
-        lf = tk.Frame(body, bg=COLORS["card"])
-        lf.pack(fill="both", expand=True)
-        sb = tk.Scrollbar(lf, orient="vertical")
-        self.batch_list = tk.Listbox(lf, bg=COLORS["card"],
-                                     fg=COLORS["text"],
-                                     selectbackground=COLORS["accent"],
-                                     selectforeground=COLORS["bg"],
-                                     font=("Consolas", 9), relief="flat",
+        # Folder list
+        list_out = tk.Frame(body, bg=C["border"])
+        list_out.pack(fill="both", expand=True)
+        list_in  = tk.Frame(list_out, bg=C["white"])
+        list_in.pack(fill="both", padx=1, pady=1)
+
+        sb = tk.Scrollbar(list_in, orient="vertical")
+        self.batch_list = tk.Listbox(list_in, bg=C["white"],
+                                     fg=C["text"],
+                                     selectbackground=C["blue_light"],
+                                     selectforeground=C["blue_dark"],
+                                     font=("Segoe UI", 9), relief="flat",
                                      bd=0, yscrollcommand=sb.set,
                                      activestyle="none",
                                      highlightthickness=0,
                                      selectmode="multiple")
         sb.config(command=self.batch_list.yview)
         sb.pack(side="right", fill="y")
-        self.batch_list.pack(fill="both", expand=True, padx=2)
+        self.batch_list.pack(fill="both", expand=True)
 
-        r1 = tk.Frame(body, bg=COLORS["bg"])
-        r1.pack(fill="x", pady=(12, 0))
-        make_btn(r1, "+ ADD FOLDER",  self._batch_add,
-                 color=COLORS["accent"],  w=155, h=40).pack(side="left", padx=(0, 8))
-        make_btn(r1, "✕ REMOVE",      self._batch_remove,
-                 color=COLORS["subtext"], w=120, h=40).pack(side="left")
+        r1 = tk.Frame(body, bg=C["bg"]); r1.pack(fill="x", pady=(10, 0))
+        flat_btn(r1, "+ Add Folder",  self._batch_add,
+                 bg=C["blue"],    w=140, h=38).pack(side="left", padx=(0, 8))
+        flat_btn(r1, "✕ Remove",     self._batch_remove,
+                 bg=C["text3"],   w=110, h=38).pack(side="left")
 
-        tk.Frame(body, bg=COLORS["border"], height=1).pack(fill="x", pady=14)
+        tk.Frame(body, bg=C["border"], height=1).pack(fill="x", pady=14)
 
-        r2 = tk.Frame(body, bg=COLORS["bg"])
-        r2.pack(fill="x")
-        make_btn(r2, "🔒  LOCK ALL",     self._batch_lock,
-                 color=COLORS["danger"],  w=170, h=46).pack(side="left", padx=(0, 12))
-        make_btn(r2, "🗝️  BATCH UNLOCK", self._batch_unlock,
-                 color=COLORS["purple"],  w=200, h=46).pack(side="left")
+        r2 = tk.Frame(body, bg=C["bg"]); r2.pack(fill="x")
+        flat_btn(r2, "🔒  Lock All",    self._batch_lock,
+                 bg=C["blue"],   w=160, h=44).pack(side="left", padx=(0, 10))
+        flat_btn(r2, "🗝️  Batch Unlock", self._batch_unlock,
+                 bg=C["purple"], w=180, h=44).pack(side="left")
 
-        self.batch_status = tk.Label(body, text="",
-                                     font=("Consolas", 8),
-                                     fg=COLORS["subtext"], bg=COLORS["bg"],
-                                     justify="left")
-        self.batch_status.pack(anchor="w", pady=(12, 0))
+        self.batch_status = tk.Label(body, text="", font=FONT_SMALL,
+                                     fg=C["text2"], bg=C["bg"], justify="left")
+        self.batch_status.pack(anchor="w", pady=(10, 0))
 
     def _batch_add(self):
         path = filedialog.askdirectory(title="Select Folder")
@@ -1274,8 +1388,7 @@ class JHSecureApp(tk.Tk):
         if not unlocked:
             self.batch_status.config(text="No unlocked folders to lock."); return
         for fp in unlocked:
-            LockSetupWindow(self, fp,
-                            on_success=self._refresh_batch)
+            LockSetupWindow(self, fp, on_success=self._refresh_batch)
 
     def _batch_unlock(self):
         locked = [f for f in self.batch_folders if is_locked(f)]
@@ -1283,164 +1396,124 @@ class JHSecureApp(tk.Tk):
             self.batch_status.config(text="No locked folders."); return
         BatchUnlockWindow(self, locked, on_done=self._refresh_batch)
 
-    # ── LOG TAB ──────────────────────────────────────────────────────────────
+    # ── LOG ───────────────────────────────────────────────────────────────────
 
-    def _build_log_page(self, page):
-        self._log_page      = page
-        self._log_page_body = tk.Frame(page, bg=COLORS["bg"])
-        self._log_page_body.pack(fill="both", expand=True, padx=24, pady=20)
+    def _build_log(self, page):
+        self._log_body = tk.Frame(page, bg=C["bg"])
+        self._log_body.pack(fill="both", expand=True, padx=20, pady=20)
 
-    def _refresh_log_page(self):
-        for w in self._log_page_body.winfo_children():
-            w.destroy()
-        body = self._log_page_body
+    def _refresh_log_tab(self):
+        for w in self._log_body.winfo_children(): w.destroy()
 
-        tk.Label(body, text="ACCESS LOGS",
-                 font=("Consolas", 14, "bold"),
-                 fg=COLORS["text"], bg=COLORS["bg"]).pack(anchor="w", pady=(0, 4))
+        tk.Label(self._log_body, text="Access Log",
+                 font=("Segoe UI", 13, "bold"),
+                 fg=C["text"], bg=C["bg"]).pack(anchor="w")
 
         if not self.current_folder:
-            tk.Label(body,
-                     text="Select a folder from the HOME tab first.",
-                     font=("Consolas", 9), fg=COLORS["subtext"],
-                     bg=COLORS["bg"]).pack(anchor="w", pady=20)
+            tk.Label(self._log_body,
+                     text="Select a folder from the Home tab first.",
+                     font=FONT_SUB, fg=C["text3"],
+                     bg=C["bg"]).pack(anchor="w", pady=16)
             return
 
-        tk.Label(body, text=f"📁  {self.current_folder}",
-                 font=("Consolas", 8), fg=COLORS["subtext"],
-                 bg=COLORS["bg"]).pack(anchor="w", pady=(0, 12))
+        tk.Label(self._log_body,
+                 text=f"📁  {self.current_folder}",
+                 font=FONT_SMALL, fg=C["text3"],
+                 bg=C["bg"]).pack(anchor="w", pady=(2, 14))
 
         cols = ("Time", "Event", "Detail")
-        tv   = ttk.Treeview(body, columns=cols, show="headings", height=20)
+        tv   = ttk.Treeview(self._log_body, columns=cols,
+                            show="headings", height=20)
         s    = ttk.Style()
-        s.configure("L.Treeview",
-                    background=COLORS["card"], foreground=COLORS["text"],
-                    fieldbackground=COLORS["card"])
-        s.configure("L.Treeview.Heading",
-                    background=COLORS["surface"], foreground=COLORS["accent"],
-                    font=("Consolas", 8, "bold"))
-        s.map("L.Treeview",
-              background=[("selected", COLORS["accent2"])],
-              foreground=[("selected", COLORS["bg"])])
-        tv.configure(style="L.Treeview")
-        for col, w in zip(cols, [165, 155, 210]):
+        s.configure("L2.Treeview",
+                    background=C["white"], foreground=C["text"],
+                    fieldbackground=C["white"], rowheight=28,
+                    font=("Segoe UI", 9))
+        s.configure("L2.Treeview.Heading",
+                    background=C["bg"], foreground=C["text2"],
+                    font=("Segoe UI", 8, "bold"))
+        s.map("L2.Treeview",
+              background=[("selected", C["blue_light"])],
+              foreground=[("selected", C["blue_dark"])])
+        tv.configure(style="L2.Treeview")
+
+        for col, w in zip(cols, [165, 155, 220]):
             tv.heading(col, text=col.upper())
             tv.column(col, width=w, anchor="w")
 
-        sb = tk.Scrollbar(body, orient="vertical", command=tv.yview)
+        sb = tk.Scrollbar(self._log_body, orient="vertical", command=tv.yview)
         tv.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
         tv.pack(fill="both", expand=True)
 
         entries = _load_log(self.current_folder)
         if not entries:
-            tv.insert("", "end", values=("—", "No entries", ""))
+            tv.insert("", "end", values=("—", "No entries yet", ""))
         else:
             for e in reversed(entries):
                 tv.insert("", "end",
-                          values=(e["time"], e["event"], e.get("detail","")))
+                          values=(e["time"], e["event"], e.get("detail", "")))
 
-        make_btn(body, "CLEAR LOG", self._clear_log,
-                 color=COLORS["danger"], w=140, h=36).pack(
-                     anchor="e", pady=(10, 0))
+        flat_btn(self._log_body, "Clear Log", self._clear_log,
+                 bg=C["red"], w=120, h=34).pack(anchor="e", pady=(10, 0))
 
     def _clear_log(self):
         if self.current_folder and messagebox.askyesno(
                 "Clear Log", "Delete all log entries?"):
             _save_log(self.current_folder, [])
-            self._refresh_log_page()
+            self._refresh_log_tab()
 
-    # ── Actions ──────────────────────────────────────────────────────────────
+    # ── Actions ───────────────────────────────────────────────────────────────
 
     def _browse(self):
         path = filedialog.askdirectory(title="Select Folder")
-        if path:
-            self._select(path)
+        if path: self._select(path)
 
     def _select(self, path):
         self.current_folder = path
-        self.folder_label.config(text=f"📁  {path}", fg=COLORS["text"])
+        self.folder_label.config(
+            text=f"📁  {path}", fg=C["text"])
         self._draw_status(path)
         self._add_recent(path)
         self._refresh_list()
-
-    def _draw_status(self, path):
-        self.status_c.delete("all")
-        if not path:
-            self.status_c.create_text(
-                20, 14, text="●  No folder selected",
-                fill=COLORS["subtext"], font=("Consolas", 10), anchor="w")
-            return
-        locked = is_locked(path)
-        color  = COLORS["danger"] if locked else COLORS["success"]
-        state  = "LOCKED" if locked else "UNLOCKED"
-        self.status_c.create_oval(0, 5, 16, 21, fill=color, outline="")
-        self.status_c.create_text(
-            24, 13, text=f"{state}  —  {Path(path).name}",
-            fill=color, font=("Consolas", 10, "bold"), anchor="w")
-        # Auto-lock info
-        if not locked:
-            lf = get_lock_file(path)
-            if os.path.exists(lf):
-                try:
-                    with open(lf) as f:
-                        d = json.load(f)
-                    als = d.get("auto_lock_seconds", 0)
-                    uat = d.get("unlocked_at", 0)
-                    if als and uat:
-                        rem = int((uat + als) - time.time())
-                        if rem > 0:
-                            self.status_c.create_text(
-                                24, 32,
-                                text=f"⏱  Auto-lock in {rem//60}m {rem%60:02d}s",
-                                fill=COLORS["warning"],
-                                font=("Consolas", 8), anchor="w")
-                except Exception:
-                    pass
-
-    def _lock_action(self):
-        if not self.current_folder:
-            messagebox.showwarning("No Folder", "Select a folder first."); return
-        if is_locked(self.current_folder):
-            messagebox.showinfo("Locked", "Already locked."); return
-        LockSetupWindow(self, self.current_folder,
-                        on_success=self._refresh_view)
-
-    def _unlock_action(self):
-        if not self.current_folder:
-            messagebox.showwarning("No Folder", "Select a folder first."); return
-        if not is_locked(self.current_folder):
-            messagebox.showinfo("Unlocked", "Not locked."); return
-        UnlockWindow(self, self.current_folder,
-                     on_success=self._refresh_view)
-
-    def _change_pin(self):
-        if not self.current_folder:
-            messagebox.showwarning("No Folder", "Select a folder first."); return
-        if not is_locked(self.current_folder):
-            messagebox.showinfo("Not Locked", "Lock it first."); return
-        ChangePINWindow(self, self.current_folder)
-
-    def _view_log(self):
-        if not self.current_folder:
-            messagebox.showwarning("No Folder", "Select a folder first."); return
-        LogViewerWindow(self, self.current_folder)
 
     def _refresh_view(self):
         self._draw_status(self.current_folder)
         self._refresh_list()
 
-    # ── List ─────────────────────────────────────────────────────────────────
+    def _lock_action(self):
+        if not self.current_folder:
+            messagebox.showwarning("No Folder", "Please select a folder first."); return
+        if is_locked(self.current_folder):
+            messagebox.showinfo("Already Locked", "This folder is already locked."); return
+        LockSetupWindow(self, self.current_folder, on_success=self._refresh_view)
 
-    def _on_list_sel(self, e):
-        sel = self.folder_list.curselection()
-        if sel:
-            self._select(self.recent_folders[sel[0]])
+    def _unlock_action(self):
+        if not self.current_folder:
+            messagebox.showwarning("No Folder", "Please select a folder first."); return
+        if not is_locked(self.current_folder):
+            messagebox.showinfo("Not Locked", "This folder is not locked."); return
+        UnlockWindow(self, self.current_folder, on_success=self._refresh_view)
 
-    def _on_list_dbl(self, e):
+    def _change_pin(self):
+        if not self.current_folder:
+            messagebox.showwarning("No Folder", "Please select a folder first."); return
+        if not is_locked(self.current_folder):
+            messagebox.showinfo("Not Locked", "Lock the folder first."); return
+        ChangePINWindow(self, self.current_folder)
+
+    def _view_log(self):
+        if not self.current_folder:
+            messagebox.showwarning("No Folder", "Please select a folder first."); return
+        LogViewerWindow(self, self.current_folder)
+
+    def _on_sel(self, e):
         sel = self.folder_list.curselection()
-        if not sel:
-            return
+        if sel: self._select(self.recent_folders[sel[0]])
+
+    def _on_dbl(self, e):
+        sel = self.folder_list.curselection()
+        if not sel: return
         path = self.recent_folders[sel[0]]
         if is_locked(path):
             UnlockWindow(self, path, on_success=self._refresh_view)
@@ -1450,11 +1523,11 @@ class JHSecureApp(tk.Tk):
     def _refresh_list(self):
         self.folder_list.delete(0, "end")
         for fp in self.recent_folders:
+            icon = "🔒" if is_locked(fp) else "🔓"
             lo, _ = is_locked_out(fp)
-            lock_icon = "🔒" if is_locked(fp) else "🔓"
-            warn = "  ⚠" if lo else ""
+            warn  = "  ⚠" if lo else ""
             self.folder_list.insert(
-                "end", f"  {lock_icon}  {Path(fp).name}{warn}  —  {fp}")
+                "end", f"  {icon}  {Path(fp).name}{warn}  —  {fp}")
 
     def _add_recent(self, path):
         if path in self.recent_folders:
@@ -1463,28 +1536,25 @@ class JHSecureApp(tk.Tk):
         self.recent_folders = self.recent_folders[:20]
         self._save_recent()
 
-    # ── Auto-Lock ────────────────────────────────────────────────────────────
+    # ── Auto-lock ──────────────────────────────────────────────────────────
 
     def check_auto_locks(self):
         for fp in self.recent_folders:
             lf = get_lock_file(fp)
-            if not os.path.exists(lf):
-                continue
+            if not os.path.exists(lf): continue
             try:
-                with open(lf) as f:
-                    d = json.load(f)
+                with open(lf) as f: d = json.load(f)
                 als = d.get("auto_lock_seconds", 0)
                 uat = d.get("unlocked_at", 0)
                 if als and uat and not d.get("locked", False):
                     if time.time() > uat + als:
                         create_lock(fp, "__auto__", "", "")
                         write_log(fp, "AUTO_LOCKED", f"After {als}s")
-            except Exception:
-                pass
+            except: pass
         self._draw_status(self.current_folder)
         self._refresh_list()
 
-    # ── Persistence ──────────────────────────────────────────────────────────
+    # ── Persistence ────────────────────────────────────────────────────────
 
     def _cfg_path(self):
         base = (os.path.dirname(sys.executable)
@@ -1496,15 +1566,13 @@ class JHSecureApp(tk.Tk):
         try:
             with open(self._cfg_path()) as f:
                 return json.load(f).get("recent", [])
-        except Exception:
-            return []
+        except: return []
 
     def _save_recent(self):
         try:
             with open(self._cfg_path(), 'w') as f:
                 json.dump({"recent": self.recent_folders}, f)
-        except Exception:
-            pass
+        except: pass
 
 
 # ══════════════════════════════════════════════════════════════════════════════
